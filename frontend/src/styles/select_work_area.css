@@ -1,0 +1,251 @@
+.select-area-page {
+  min-height: 100vh;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.select-topbar {
+  background: #ffffff;
+  padding: 16px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-badge-icon {
+  width: 38px;
+  height: 38px;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.brand-section span {
+  font-weight: 700;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.employee-profile-pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar-circle {
+  width: 38px;
+  height: 38px;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.profile-info strong {
+  display: block;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.profile-info span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* CONTENT */
+.select-content {
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 50px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.select-title-box {
+  text-align: center;
+  margin-bottom: 45px;
+}
+
+.select-title-box h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+}
+
+.select-title-box p {
+  font-size: 15px;
+  color: #64748b;
+  margin-top: 8px;
+}
+
+/* CARDS GRID */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 25px;
+  width: 100%;
+}
+
+.work-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 35px 30px;
+  border-top: 6px solid #cbd5e1;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+
+.work-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.12);
+}
+
+.work-card.recruitment {
+  border-top-color: #2563eb;
+}
+
+.work-card.crm {
+  border-top-color: #10b981;
+}
+
+.work-card.financial {
+  border-top-color: #8b5cf6;
+}
+
+.card-icon-box {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 20px;
+}
+
+.work-card.recruitment .card-icon-box {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.work-card.crm .card-icon-box {
+  background: #ecfdf5;
+  color: #10b981;
+}
+
+.work-card.financial .card-icon-box {
+  background: #f5f3ff;
+  color: #8b5cf6;
+}
+
+.work-card h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 18px;
+}
+
+.bullet-points {
+  list-style: none;
+  margin-bottom: 25px;
+  flex: 1;
+}
+
+.bullet-points li {
+  font-size: 14px;
+  color: #475569;
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bullet-points li::before {
+  content: '•';
+  font-size: 18px;
+  color: #94a3b8;
+}
+
+.workflow-tagline {
+  font-size: 11px;
+  color: #64748b;
+  background: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  font-weight: 500;
+}
+
+.continue-btn {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.work-card.recruitment .continue-btn {
+  background: #2563eb;
+}
+
+.work-card.crm .continue-btn {
+  background: #10b981;
+}
+
+.work-card.financial .continue-btn {
+  background: #8b5cf6;
+}
+
+.continue-btn:hover {
+  opacity: 0.9;
+}
+
+.select-footer-note {
+  margin-top: 40px;
+  font-size: 13px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 992px) {
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
