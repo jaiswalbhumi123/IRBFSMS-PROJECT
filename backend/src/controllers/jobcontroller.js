@@ -53,7 +53,7 @@ exports.createJob = async (req, res) => {
       ]
     );
 
-    res.status(201).json({ message: 'Job vacancy created successfully!', jobId: result.insertId });
+    res.status(201).json({ message: 'Job vacancy created successfully!', id: result.insertId, jobId: result.insertId });
   } catch (err) {
     console.error('Create job error:', err);
     res.status(500).json({ message: 'Failed to create job in database' });
