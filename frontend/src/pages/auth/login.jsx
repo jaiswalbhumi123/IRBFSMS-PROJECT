@@ -29,18 +29,16 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
-      const { data } = await api.post('/auth/login', { 
-        email: email.trim().toLowerCase(), 
-        password 
+      const { data } = await api.post('/auth/login', {
+        email,
+        password,
+        role: roleTab === 'admin' ? 'Admin' : 'Employee',
       });
-
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       localStorage.setItem('sessionId', data.sessionId);
 
-      // DIRECT PROPER ROUTING: Every user lands directly on their exact dashboard!
       if (data.user.role === 'Admin') {
         navigate('/admin/dashboard');
       } else if (data.user.module === 'IT') {
@@ -52,7 +50,6 @@ export default function Login() {
       } else if (data.user.module === 'Financial') {
         navigate('/employee/financial-dashboard');
       } else {
-        // Fallback only if no department/module assigned
         navigate('/employee/select-module');
       }
     } catch (err) {

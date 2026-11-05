@@ -9,6 +9,7 @@ import CrmDashboard from './pages/employee/CrmDashboard';
 import FinancialDashboard from './pages/employee/FinancialDashboard';
 import ProtectedRoute from './routes/protectedroute';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import CandidateProfile from './pages/employee/candidateprofile';
 
 export default function App() {
   return (
@@ -43,6 +44,9 @@ export default function App() {
         } />
         <Route path="/employee/financial-dashboard" element={
           <ProtectedRoute role="Employee"><FinancialDashboard /></ProtectedRoute>
+        } />
+        <Route path="/employee/candidate/:id" element={
+          <ProtectedRoute role="Employee"><CandidateProfile /></ProtectedRoute>
         } />
 
         {/* Fallback */}

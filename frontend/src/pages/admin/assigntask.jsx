@@ -34,7 +34,7 @@ export default function AssignTask() {
       await api.post('/tasks', formData);
       setMessage('✅ Task assigned successfully!');
       setTimeout(() => navigate('/admin/dashboard'), 1500);
-    } catch (err) {
+    } catch {
       setMessage('❌ Failed to assign task');
     }
   };

@@ -12,8 +12,8 @@ export default function SelectWorkArea() {
     setLoadingModule(moduleName);
     try {
       await api.put('/employee/select-module', { module: moduleName });
-      user.module = moduleName;
-      localStorage.setItem('user', JSON.stringify(user));
+      const updatedUser = { ...user, module: moduleName };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
       navigate(targetRoute);
     } catch (err) {
       console.error('Failed to select module:', err);

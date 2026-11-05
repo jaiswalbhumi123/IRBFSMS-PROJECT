@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const bcrypt = require('bcryptjs');
 
 // GET all employees with real-time status and current tasks
 exports.getLiveEmployees = async (req, res) => {
@@ -77,5 +78,49 @@ exports.getDashboardStats = async (req, res) => {
   } catch (err) {
     console.error('getDashboardStats error:', err);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+// 1. Saare Users ki list nikalna (Password hash nahi bhejenge)
+exports.getAllUsers = async (req, res) => {
+  try {
+    const [users] = await pool.query(
+      'SELECT id, name, email, role, module, status FROM users ORDER BY id DESC'
+    );
+    res.json(users);
+  } catch (err) { 
+    console.error('getAllUsers error:', err);
+    res.status(500).json({ message: 'Server error' }); 
+  }
+};
+
+// 2. Naya User add karna (Password hash karke)
+exports.createUser = async (req, res) => {
+  try {
+    const { name, email, password, role, module } = req.body;
+    
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Name, Email and Password are required' });
+    }
+
+    // Check karo ki email pehle se toh nahi hai
+    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (existing.length > 0) {
+      return res.status(400).json({ message: 'Email already registered' });
+    }
+
+    // Password Hash banao
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+
+    // Database mein save karo
+    await pool.query(
+      `INSERT INTO users (name, email, password_hash, role, module, status) VALUES (?, ?, ?, ?, ?, 'Active')`,
+      [name, email, password_hash, role || 'Employee', module || null]
+    );
+
+    res.status(201).json({ message: 'User added successfully' });
+  } catch (err) { 
+    console.error('createUser error:', err);
+    res.status(500).json({ message: err.message || 'Server error' }); 
   }
 };

@@ -4,17 +4,93 @@ import EmployeeHeader from '../../components/EmployeeHeader';
 import '../../styles/dashboard.css';
 
 export default function CrmDashboard() {
-  // TAB NAVIGATION: 'dashboard' | 'tasks' | 'worklog' | 'leads' | 'clients' | 'followups'
+  // ACTIVE VIEW TAB: 'dashboard' | 'leads' | 'clients' | 'followups' | 'tasks' | 'worklog'
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [followUpFilter, setFollowUpFilter] = useState('pending'); // 'pending' | 'upcoming' | 'completed'
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [crmStats, setCrmStats] = useState(null);
 
-  // TASKS FILTER STATE
+  // 1. CLIENTS STATE & FILTERS
+  const [clients, setClients] = useState([]);
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [submittingClient, setSubmittingClient] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientStatusFilter, setClientStatusFilter] = useState('ALL');
+  const [clientForm, setClientForm] = useState({
+    company_name: '',
+    contact_person: '',
+    email: '',
+    phone: '',
+    business_requirements: '',
+    status: 'Active'
+  });
+
+  // 2. LEADS STATE & FILTERS
+  const [leads, setLeads] = useState([]);
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [submittingLead, setSubmittingLead] = useState(false);
+  const [leadSearch, setLeadSearch] = useState('');
+  const [leadStatusFilter, setLeadStatusFilter] = useState('ALL');
+  const [leadSourceFilter, setLeadSourceFilter] = useState('ALL');
+  const [leadForm, setLeadForm] = useState({
+    lead_title: '',
+    source: 'Website',
+    service_required: '',
+    follow_up_date: '',
+    remarks: ''
+  });
+
+  // RESCHEDULE MODAL
+  const [rescheduleLead, setRescheduleLead] = useState(null);
+  const [newFollowUpDate, setNewFollowUpDate] = useState('');
+  const [newRemarks, setNewRemarks] = useState('');
+
+  // TASKS & WORK LOG
   const [taskFilter, setTaskFilter] = useState('ALL');
-
-  // WORK LOG STATE
   const [workLogs, setWorkLogs] = useState([]);
 
+  // DOCUMENTS STATE
+  const [documentsList, setDocumentsList] = useState([]);
+  const [showUploadDocModal, setShowUploadDocModal] = useState(false);
+  const [uploadDocSubmitting, setUploadDocSubmitting] = useState(false);
+  const [uploadDocFile, setUploadDocFile] = useState(null);
+  const [uploadDocForm, setUploadDocForm] = useState({
+    reference_type: 'Client',
+    reference_id: '',
+    document_type: 'Contract / Agreement'
+  });
+
+  // Safe Date Helpers
+  const formatDate = (val) => {
+    if (!val) return '—';
+    try {
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN');
+    } catch {
+      return '—';
+    }
+  };
+
+  const formatTime = (val) => {
+    if (!val) return '—';
+    try {
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '—';
+    }
+  };
+
+  const getDocumentUrl = (path) => {
+    if (!path) return '#';
+    if (path.startsWith('http')) return path;
+    const base = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '');
+    return `${base}${path}`;
+  };
+
+  // --- FETCH CALLS ---
   const fetchDashboard = async () => {
     try {
       const res = await api.get('/employee/dashboard-data');
@@ -26,22 +102,119 @@ export default function CrmDashboard() {
     }
   };
 
+  const fetchStats = async () => {
+    try {
+      const res = await api.get('/leads/stats');
+      setCrmStats(res.data);
+    } catch (err) {
+      console.error('Error fetching CRM stats:', err);
+    }
+  };
+
+  const fetchLeads = async () => {
+    try {
+      const res = await api.get('/leads');
+      setLeads(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching leads:', err);
+      setLeads([]);
+    }
+  };
+
+  const fetchClients = async () => {
+    try {
+      const res = await api.get('/clients');
+      setClients(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching clients:', err);
+      setClients([]);
+    }
+  };
+
+  const fetchDocuments = async () => {
+    try {
+      const res = await api.get('/documents?module=Business');
+      setDocumentsList(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching CRM documents:', err);
+      setDocumentsList([]);
+    }
+  };
+
   const fetchWorkLog = async () => {
     try {
       const res = await api.get('/employee/work-log');
-      setWorkLogs(res.data.sessions || []);
+      setWorkLogs(Array.isArray(res.data?.sessions) ? res.data.sessions : []);
     } catch (err) {
       console.error('Failed to load work logs:', err);
+      setWorkLogs([]);
     }
   };
 
   useEffect(() => {
     fetchDashboard();
+    fetchStats();
+    fetchLeads();
+    fetchClients();
+    fetchDocuments();
     fetchWorkLog();
-    const interval = setInterval(fetchDashboard, 15000);
+
+    const interval = setInterval(() => {
+      fetchDashboard();
+      fetchStats();
+    }, 15000);
     return () => clearInterval(interval);
   }, []);
 
+  const openUploadForClient = (clientId) => {
+    setUploadDocForm({
+      reference_type: 'Client',
+      reference_id: clientId,
+      document_type: 'Contract / Agreement'
+    });
+    setUploadDocFile(null);
+    setShowUploadDocModal(true);
+  };
+
+  const handleUploadCrmDoc = async (e) => {
+    e.preventDefault();
+    if (!uploadDocFile) return alert('Kripya document file select karein!');
+    if (!uploadDocForm.reference_id) return alert('Kripya client select karein!');
+
+    const formData = new FormData();
+    formData.append('file', uploadDocFile);
+    formData.append('reference_id', uploadDocForm.reference_id);
+    formData.append('reference_type', uploadDocForm.reference_type);
+    formData.append('document_type', uploadDocForm.document_type);
+
+    try {
+      setUploadDocSubmitting(true);
+      await api.post('/documents/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      alert('✅ Document successfully upload ho gaya!');
+      setShowUploadDocModal(false);
+      setUploadDocFile(null);
+      fetchDocuments();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error uploading document');
+    } finally {
+      setUploadDocSubmitting(false);
+    }
+  };
+
+  const handleDeleteDoc = async (id) => {
+    if (!window.confirm('Kya aap is document ko delete karna chahte hain?')) return;
+    try {
+      await api.delete(`/documents/${id}`);
+      fetchDocuments();
+      alert('Document delete ho gaya!');
+    } catch (err) {
+      alert('Error deleting document');
+    }
+  };
+
+  // --- ACTION HANDLERS ---
   const handleTaskAction = async (taskId, newStatus) => {
     try {
       await api.put(`/employee/tasks/${taskId}/status`, { status: newStatus });
@@ -51,20 +224,159 @@ export default function CrmDashboard() {
     }
   };
 
+  const handleCreateLead = async (e) => {
+    e.preventDefault();
+    setSubmittingLead(true);
+    try {
+      await api.post('/leads', leadForm);
+      setShowLeadModal(false);
+      setLeadForm({ lead_title: '', source: 'Website', service_required: '', follow_up_date: '', remarks: '' });
+      fetchLeads();
+      fetchStats();
+      alert('✅ Lead added successfully!');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to add lead');
+    } finally {
+      setSubmittingLead(false);
+    }
+  };
+
+  const handleLeadStatusChange = async (id, newStatus) => {
+    try {
+      await api.put(`/leads/${id}/status`, { status: newStatus });
+      fetchLeads();
+      fetchStats();
+    } catch (err) {
+      alert('Error updating lead status');
+    }
+  };
+
+  const handleCreateClient = async (e) => {
+    e.preventDefault();
+    setSubmittingClient(true);
+    try {
+      await api.post('/clients', clientForm);
+      setShowClientModal(false);
+      setClientForm({
+        company_name: '',
+        contact_person: '',
+        email: '',
+        phone: '',
+        business_requirements: '',
+        status: 'Active'
+      });
+      fetchClients();
+      fetchStats();
+      alert('✅ Client registered successfully!');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to register client');
+    } finally {
+      setSubmittingClient(false);
+    }
+  };
+
+  const handleClientStatusChange = async (id, newStatus) => {
+    try {
+      await api.put(`/clients/${id}/status`, { status: newStatus });
+      fetchClients();
+      fetchStats();
+    } catch (err) {
+      alert('Error updating client status');
+    }
+  };
+
+  const handleRescheduleSubmit = async (e) => {
+    e.preventDefault();
+    if (!rescheduleLead || !newFollowUpDate) return;
+    try {
+      await api.put(`/leads/${rescheduleLead.id}/follow-up`, {
+        follow_up_date: newFollowUpDate,
+        remarks: newRemarks || rescheduleLead.remarks
+      });
+      setRescheduleLead(null);
+      setNewFollowUpDate('');
+      setNewRemarks('');
+      fetchLeads();
+      fetchStats();
+      alert('✅ Next follow-up date updated!');
+    } catch (err) {
+      alert('Failed to update follow-up');
+    }
+  };
+
   if (loading) {
-    return <div style={{ padding: 40, textAlign: 'center' }}>Loading CRM Dashboard...</div>;
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
+        <div style={{ textAlign: 'center', color: '#64748b' }}>
+          <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>
+          <p style={{ fontWeight: 600, fontSize: '15px' }}>Loading Financial & CRM Management...</p>
+        </div>
+      </div>
+    );
   }
 
   const { user, session, stats, tasks = [], timeline = [] } = data || {};
 
-  const filteredTasks = tasks.filter(t => {
-    if (taskFilter === 'ALL') return true;
-    return t.status === taskFilter;
+  // Safe Arrays
+  const safeLeads = leads || [];
+  const safeClients = clients || [];
+  const safeWorkLogs = workLogs || [];
+
+  // Dynamic 5 KPI Metrics (Database Synced with Fallback)
+  const totalLeadsCount = crmStats?.totalLeads ?? safeLeads.length;
+  const activeLeadsCount = crmStats?.activeLeads ?? safeLeads.filter(l => ['Open', 'In Progress'].includes(l.status)).length;
+  const convertedLeadsCount = crmStats?.convertedLeads ?? safeLeads.filter(l => l.status === 'Converted').length;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const pendingFollowUpsCount = crmStats?.pendingFollowUps ?? safeLeads.filter(l => l.follow_up_date && l.follow_up_date <= todayStr && l.status !== 'Converted').length;
+  const activeClientsCount = crmStats?.activeClients ?? safeClients.filter(c => c.status === 'Active').length;
+
+  // Filtered Leads
+  const filteredLeads = safeLeads.filter(l => {
+    const term = leadSearch.toLowerCase().trim();
+    const matchesSearch = !term ||
+      (l.lead_title && l.lead_title.toLowerCase().includes(term)) ||
+      (l.service_required && l.service_required.toLowerCase().includes(term)) ||
+      (l.remarks && l.remarks.toLowerCase().includes(term));
+
+    const matchesStatus = leadStatusFilter === 'ALL' || l.status === leadStatusFilter;
+    const matchesSource = leadSourceFilter === 'ALL' || l.source === leadSourceFilter;
+    return matchesSearch && matchesStatus && matchesSource;
+  });
+
+  // Filtered Clients
+  const filteredClients = safeClients.filter(c => {
+    const term = clientSearch.toLowerCase().trim();
+    const matchesSearch = !term ||
+      (c.company_name && c.company_name.toLowerCase().includes(term)) ||
+      (c.contact_person && c.contact_person.toLowerCase().includes(term)) ||
+      (c.email && c.email.toLowerCase().includes(term)) ||
+      (c.phone && c.phone.includes(term)) ||
+      (c.business_requirements && c.business_requirements.toLowerCase().includes(term));
+
+    const matchesStatus = clientStatusFilter === 'ALL' || c.status === clientStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  // Categorized Follow-ups
+  const upcomingFollowUps = safeLeads.filter(l => l.follow_up_date && l.follow_up_date > todayStr && l.status !== 'Converted' && l.status !== 'Lost');
+  const pendingFollowUpsList = safeLeads.filter(l => l.follow_up_date && l.follow_up_date <= todayStr && l.status !== 'Converted');
+  const completedFollowUps = safeLeads.filter(l => l.status === 'Converted' || (l.follow_up_date && l.follow_up_date < todayStr && l.status === 'Lost'));
+
+  // Filtered Tasks
+  const filteredTasks = (tasks || []).filter(t => taskFilter === 'ALL' || t.status === taskFilter);
+
+  const todayFormatted = new Date().toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
   });
 
   return (
     <div className="dashboard-layout">
-      {/* ================= SIDEBAR ================= */}
+
+      {/* ================= 1. SIDEBAR ================= */}
       <aside className="dash-sidebar">
         <div className="dash-sidebar-header">
           <div className="dash-logo-icon" style={{ background: '#059669' }}>CRM</div>
@@ -72,13 +384,39 @@ export default function CrmDashboard() {
         </div>
 
         <nav className="dash-nav">
-          <p className="nav-section-title">MY WORK</p>
+          <p className="nav-section-title">FINANCIAL & CRM</p>
           <a
             className={activeTab === 'dashboard' ? 'active' : ''}
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => { setActiveTab('dashboard'); fetchStats(); }}
           >
-            📊 Dashboard
+            📊 CRM Dashboard
           </a>
+          <a
+            className={activeTab === 'leads' ? 'active' : ''}
+            onClick={() => { setActiveTab('leads'); fetchLeads(); }}
+          >
+            🎯 Business Leads ({totalLeadsCount})
+          </a>
+          <a
+            className={activeTab === 'clients' ? 'active' : ''}
+            onClick={() => { setActiveTab('clients'); fetchClients(); }}
+          >
+            🏢 Client Directory ({safeClients.length})
+          </a>
+          <a
+            className={activeTab === 'followups' ? 'active' : ''}
+            onClick={() => setActiveTab('followups')}
+          >
+            🔔 Follow-ups ({pendingFollowUpsCount})
+          </a>
+          <a
+            className={activeTab === 'documents' ? 'active' : ''}
+            onClick={() => { setActiveTab('documents'); fetchDocuments(); }}
+          >
+            📁 Business Documents ({documentsList.length})
+          </a>
+
+          <p className="nav-section-title">MY WORK</p>
           <a
             className={activeTab === 'tasks' ? 'active' : ''}
             onClick={() => setActiveTab('tasks')}
@@ -91,30 +429,10 @@ export default function CrmDashboard() {
           >
             ⏱️ Work Log
           </a>
-
-          <p className="nav-section-title">BUSINESS / CRM</p>
-          <a
-            className={activeTab === 'leads' ? 'active' : ''}
-            onClick={() => setActiveTab('leads')}
-          >
-            💼 Sales Leads
-          </a>
-          <a
-            className={activeTab === 'clients' ? 'active' : ''}
-            onClick={() => setActiveTab('clients')}
-          >
-            🏢 Clients Directory
-          </a>
-          <a
-            className={activeTab === 'followups' ? 'active' : ''}
-            onClick={() => setActiveTab('followups')}
-          >
-            🔔 Follow-ups
-          </a>
         </nav>
       </aside>
 
-      {/* ================= MAIN CONTENT ================= */}
+      {/* ================= 2. MAIN CONTENT ================= */}
       <main className="dash-main">
         <EmployeeHeader
           user={user}
@@ -125,94 +443,126 @@ export default function CrmDashboard() {
         />
 
         <div className="dash-content">
-          
-          {/* ================= VIEW 1: DASHBOARD OVERVIEW ================= */}
+
+          {/* ================= VIEW 1: CRM DASHBOARD (CASE STUDY SPEC) ================= */}
           {activeTab === 'dashboard' && (
             <div>
-              <div className="greeting-header">
-                <h1>Good morning, {user?.name?.split(' ')[0] || 'Rahul'}!</h1>
-                <p>Monday, 19 October 2026 · Business & Corporate CRM Team</p>
-              </div>
-
-              {/* ROW 1: TASK SUMMARY CARDS */}
-              <div className="cards-row-tasks">
-                <div className="kpi-card blue" onClick={() => setActiveTab('tasks')} style={{ cursor: 'pointer' }}>
-                  <h2>{stats?.assignedToday || 0}</h2>
-                  <p>Tasks assigned today →</p>
+              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h1 style={{ margin: 0 }}>Good morning, {user?.name?.split(' ')[0] || 'Rahul'}!</h1>
+                  <p style={{ margin: '4px 0 0', color: '#64748b' }}>{todayFormatted} · Financial & Business Services Management</p>
                 </div>
-                <div className="kpi-card indigo" onClick={() => setActiveTab('tasks')} style={{ cursor: 'pointer' }}>
-                  <h2>{stats?.inProgress || 0}</h2>
-                  <p>In progress →</p>
-                </div>
-                <div className="kpi-card green">
-                  <h2>{stats?.completed || 0}</h2>
-                  <p>Completed</p>
-                </div>
-                <div className="kpi-card red">
-                  <h2>{stats?.overdue || 0}</h2>
-                  <p>Overdue</p>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => setShowLeadModal(true)}
+                    style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                  >
+                    + Add New Lead
+                  </button>
+                  <button
+                    onClick={() => setShowClientModal(true)}
+                    style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                  >
+                    + Register Client
+                  </button>
                 </div>
               </div>
 
-              {/* ROW 2: CRM SPECIFIC METRICS */}
-              <div className="cards-row-tasks">
-                <div className="kpi-card purple" onClick={() => setActiveTab('clients')} style={{ cursor: 'pointer' }}>
-                  <h2>48</h2>
-                  <p>Active Clients →</p>
+              {/* 5 KPI CARDS PER CASE STUDY SPECIFICATION */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, margin: '20px 0' }}>
+                <div
+                  className="kpi-card blue"
+                  onClick={() => setActiveTab('leads')}
+                  style={{ cursor: 'pointer', padding: 18 }}
+                  title="Click to view all leads"
+                >
+                  <span style={{ fontSize: 24 }}>🎯</span>
+                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{totalLeadsCount}</h2>
+                  <p style={{ fontSize: 13, fontWeight: 600 }}>Total Leads →</p>
                 </div>
-                <div className="kpi-card green" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
-                  <h2>₹18.4L</h2>
-                  <p>Pipeline Value →</p>
+
+                <div
+                  className="kpi-card indigo"
+                  onClick={() => { setActiveTab('leads'); setLeadStatusFilter('In Progress'); }}
+                  style={{ cursor: 'pointer', padding: 18 }}
+                  title="Click to view active leads in progress"
+                >
+                  <span style={{ fontSize: 24 }}>⚡</span>
+                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{activeLeadsCount}</h2>
+                  <p style={{ fontSize: 13, fontWeight: 600 }}>Active Leads →</p>
                 </div>
-                <div className="kpi-card amber" onClick={() => setActiveTab('followups')} style={{ cursor: 'pointer' }}>
-                  <h2>7</h2>
-                  <p>Calls Scheduled Today →</p>
+
+                <div
+                  className="kpi-card green"
+                  onClick={() => { setActiveTab('leads'); setLeadStatusFilter('Converted'); }}
+                  style={{ cursor: 'pointer', padding: 18 }}
+                  title="Click to view converted deals"
+                >
+                  <span style={{ fontSize: 24 }}>🏆</span>
+                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{convertedLeadsCount}</h2>
+                  <p style={{ fontSize: 13, fontWeight: 600 }}>Converted Leads</p>
                 </div>
-                <div className="kpi-card blue" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
-                  <h2>14</h2>
-                  <p>New Leads This Week →</p>
+
+                <div
+                  className="kpi-card red"
+                  onClick={() => { setActiveTab('followups'); setFollowUpFilter('pending'); }}
+                  style={{ cursor: 'pointer', padding: 18 }}
+                  title="Click to view pending follow-ups"
+                >
+                  <span style={{ fontSize: 24 }}>⏳</span>
+                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{pendingFollowUpsCount}</h2>
+                  <p style={{ fontSize: 13, fontWeight: 600 }}>Pending Follow-ups</p>
+                </div>
+
+                <div
+                  className="kpi-card purple"
+                  onClick={() => setActiveTab('clients')}
+                  style={{ cursor: 'pointer', padding: 18 }}
+                  title="Click to view client statistics"
+                >
+                  <span style={{ fontSize: 24 }}>🏢</span>
+                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{activeClientsCount}/{safeClients.length}</h2>
+                  <p style={{ fontSize: 13, fontWeight: 600 }}>Client Statistics (Active/Total)</p>
                 </div>
               </div>
 
-              {/* 2-COLUMN SECTION: TASKS & TIMELINE */}
+              {/* 2-Column Section */}
               <div className="dashboard-grid-2col">
+                {/* Active Leads Overview */}
                 <div className="panel-card">
-                  <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Pending Tasks Today</span>
+                  <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Active Business Opportunities</span>
                     <button
-                      onClick={() => setActiveTab('tasks')}
+                      onClick={() => setActiveTab('leads')}
                       style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
                     >
-                      View All →
+                      View All Leads →
                     </button>
                   </div>
-
-                  {tasks.length === 0 ? (
-                    <p style={{ color: '#94a3b8', textAlign: 'center', padding: 25 }}>No pending tasks.</p>
+                  {safeLeads.length === 0 ? (
+                    <p style={{ color: '#94a3b8', textAlign: 'center', padding: 25 }}>No active leads found.</p>
                   ) : (
                     <table className="dash-table">
                       <thead>
-                        <tr>
-                          <th>Task Title</th>
-                          <th>Priority</th>
-                          <th>Status</th>
-                          <th>Action</th>
-                        </tr>
+                        <tr><th>Lead Title</th><th>Service</th><th>Follow-up</th><th>Status</th></tr>
                       </thead>
                       <tbody>
-                        {tasks.slice(0, 4).map(t => (
-                          <tr key={t.id}>
-                            <td><strong>{t.title}</strong></td>
-                            <td><span className={`priority-badge ${(t.priority || 'medium').toLowerCase()}`}>{t.priority}</span></td>
-                            <td><span className={`task-status-badge ${t.status.toLowerCase().replace(' ', '-')}`}>{t.status}</span></td>
+                        {safeLeads.slice(0, 4).map(l => (
+                          <tr key={l.id}>
                             <td>
-                              {t.status === 'Assigned' && (
-                                <button onClick={() => handleTaskAction(t.id, 'In Progress')} className="btn-action-task start">Start</button>
-                              )}
-                              {t.status === 'In Progress' && (
-                                <button onClick={() => handleTaskAction(t.id, 'Completed')} className="btn-action-task complete">Complete</button>
-                              )}
-                              {t.status === 'Completed' && <span style={{ color: '#16a34a', fontWeight: 600 }}>✓ Done</span>}
+                              <strong>{l.lead_title}</strong>
+                              <div style={{ fontSize: 11.5, color: '#64748b' }}>Source: {l.source}</div>
+                            </td>
+                            <td>{l.service_required || 'Financial / IT'}</td>
+                            <td style={{ fontSize: 12, fontWeight: 600, color: '#1e40af' }}>{formatDate(l.follow_up_date)}</td>
+                            <td>
+                              <span style={{
+                                background: l.status === 'Converted' ? '#dcfce7' : l.status === 'Lost' ? '#fee2e2' : l.status === 'In Progress' ? '#fef3c7' : '#e0e7ff',
+                                color: l.status === 'Converted' ? '#15803d' : l.status === 'Lost' ? '#b91c1c' : l.status === 'In Progress' ? '#b45309' : '#4338ca',
+                                padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700
+                              }}>
+                                ● {l.status}
+                              </span>
                             </td>
                           </tr>
                         ))}
@@ -221,47 +571,360 @@ export default function CrmDashboard() {
                   )}
                 </div>
 
+                {/* Follow-up Reminders */}
                 <div className="panel-card">
-                  <div className="panel-title">
-                    <span>Today's Activity</span>
-                    <span style={{ fontSize: 11, color: '#2563eb' }}>● Live</span>
+                  <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Upcoming Follow-ups</span>
+                    <button
+                      onClick={() => setActiveTab('followups')}
+                      style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
+                    >
+                      Manage Follow-ups →
+                    </button>
                   </div>
-                  <div className="activity-timeline">
-                    {timeline.length === 0 ? (
-                      <p style={{ color: '#94a3b8', fontSize: 13 }}>No activities recorded yet.</p>
-                    ) : (
-                      timeline.map((act, idx) => (
-                        <div key={idx} className="timeline-entry">
-                          <div className="timeline-dot" />
-                          <span className="timeline-time">{new Date(act.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
-                          <span className="timeline-desc">{act.text}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  {upcomingFollowUps.length === 0 ? (
+                    <p style={{ color: '#94a3b8', textAlign: 'center', padding: 25 }}>No upcoming follow-ups scheduled.</p>
+                  ) : (
+                    <table className="dash-table">
+                      <thead>
+                        <tr><th>Lead Title</th><th>Date</th><th>Remarks</th></tr>
+                      </thead>
+                      <tbody>
+                        {upcomingFollowUps.slice(0, 4).map(l => (
+                          <tr key={l.id}>
+                            <td><strong>{l.lead_title}</strong></td>
+                            <td style={{ color: '#2563eb', fontWeight: 600 }}>{formatDate(l.follow_up_date)}</td>
+                            <td style={{ fontSize: 12, color: '#64748b' }}>{l.remarks || 'Standard discussion'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* ================= VIEW 2: MY TASKS DEDICATED PAGE ================= */}
+          {/* ================= VIEW 2: LEAD MANAGEMENT ================= */}
+          {activeTab === 'leads' && (
+            <div>
+              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h1 style={{ margin: 0 }}>🎯 Lead Management</h1>
+                  <p style={{ margin: '4px 0 0', color: '#64748b' }}>
+                    Add leads, track sources, services, assigned executives, follow-up dates, and status
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowLeadModal(true)}
+                  style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)' }}
+                >
+                  + Add New Lead
+                </button>
+              </div>
+
+              {/* Lead Search & Filter Toolbar */}
+              <div style={{ display: 'flex', gap: 12, margin: '16px 0', background: '#fff', padding: '12px 16px', borderRadius: 10, border: '1px solid #e2e8f0', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search leads by title, service, or remarks..."
+                  value={leadSearch}
+                  onChange={(e) => setLeadSearch(e.target.value)}
+                  style={{ flex: 1, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+                />
+                <select value={leadSourceFilter} onChange={(e) => setLeadSourceFilter(e.target.value)} style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}>
+                  <option value="ALL">All Sources</option>
+                  <option value="Website">Website</option>
+                  <option value="Referral">Referral</option>
+                  <option value="Social Media">Social Media</option>
+                  <option value="Cold Call">Cold Call</option>
+                </select>
+                <select value={leadStatusFilter} onChange={(e) => setLeadStatusFilter(e.target.value)} style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}>
+                  <option value="ALL">All Status</option>
+                  <option value="Open">Open</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Converted">Converted</option>
+                  <option value="Lost">Lost</option>
+                </select>
+              </div>
+
+              <div className="panel-card">
+                <div className="panel-title"><span>Leads Pipeline ({filteredLeads.length})</span></div>
+                {filteredLeads.length === 0 ? (
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No leads match the selected criteria.</p>
+                ) : (
+                  <table className="dash-table">
+                    <thead>
+                      <tr>
+                        <th>Lead Title & Remarks</th>
+                        <th>Source</th>
+                        <th>Product / Service</th>
+                        <th>Assigned Executive</th>
+                        <th>Follow-up Date</th>
+                        <th>Lead Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLeads.map(l => (
+                        <tr key={l.id}>
+                          <td>
+                            <strong style={{ fontSize: 14, color: '#0f172a' }}>{l.lead_title}</strong>
+                            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{l.remarks || 'No remarks provided'}</div>
+                          </td>
+                          <td><span style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>{l.source}</span></td>
+                          <td>{l.service_required || 'Financial / IT'}</td>
+                          <td><span style={{ fontSize: 12.5, color: '#334155' }}>👤 {l.assigned_to_name || 'Rahul Verma'}</span></td>
+                          <td><strong style={{ color: '#1e40af', fontSize: 12.5 }}>{formatDate(l.follow_up_date)}</strong></td>
+                          <td>
+                            <select
+                              value={l.status}
+                              onChange={(e) => handleLeadStatusChange(l.id, e.target.value)}
+                              style={{
+                                padding: '6px 8px', borderRadius: 6, border: '1.5px solid #cbd5e1', fontSize: 12, fontWeight: 600,
+                                background: l.status === 'Converted' ? '#f0fdf4' : l.status === 'Lost' ? '#fef2f2' : l.status === 'In Progress' ? '#fefce8' : '#eef2ff',
+                                color: l.status === 'Converted' ? '#15803d' : l.status === 'Lost' ? '#b91c1c' : l.status === 'In Progress' ? '#b45309' : '#4338ca'
+                              }}
+                            >
+                              <option value="Open">Open</option>
+                              <option value="In Progress">In Progress</option>
+                              <option value="Converted">Converted</option>
+                              <option value="Lost">Lost</option>
+                            </select>
+                          </td>
+                          <td>
+                            <button
+                              onClick={() => {
+                                setRescheduleLead(l);
+                                setNewFollowUpDate(l.follow_up_date ? l.follow_up_date.split('T')[0] : '');
+                                setNewRemarks(l.remarks || '');
+                              }}
+                              style={{ padding: '5px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              🔔 Reschedule
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ================= VIEW 3: CLIENT MANAGEMENT ================= */}
+          {activeTab === 'clients' && (
+            <div>
+              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h1 style={{ margin: 0 }}>🏢 Client Management Directory</h1>
+                  <p style={{ margin: '4px 0 0', color: '#64748b' }}>
+                    Client registration, company details, contact person, and business requirements
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowClientModal(true)}
+                  style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 2px 6px rgba(5, 150, 105, 0.3)' }}
+                >
+                  + Register Client
+                </button>
+              </div>
+
+              {/* Search & Filter Toolbar */}
+              <div style={{ display: 'flex', gap: 12, margin: '16px 0', background: '#fff', padding: '12px 16px', borderRadius: 10, border: '1px solid #e2e8f0', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search clients by company, contact person, email, or phone..."
+                  value={clientSearch}
+                  onChange={(e) => setClientSearch(e.target.value)}
+                  style={{ flex: 1, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+                />
+                <select value={clientStatusFilter} onChange={(e) => setClientStatusFilter(e.target.value)} style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}>
+                  <option value="ALL">All Status</option>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div className="panel-card">
+                <div className="panel-title"><span>Registered Corporate Clients ({filteredClients.length})</span></div>
+                {filteredClients.length === 0 ? (
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No clients found.</p>
+                ) : (
+                  <table className="dash-table">
+                    <thead>
+                      <tr>
+                        <th>Company Details</th>
+                        <th>Contact Person</th>
+                        <th>Contact Information</th>
+                        <th>Business Requirements</th>
+                        <th>Client Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredClients.map(c => (
+                        <tr key={c.id}>
+                          <td><strong style={{ fontSize: 14, color: '#0f172a' }}>{c.company_name}</strong></td>
+                          <td><span style={{ fontWeight: 600, color: '#334155' }}>👤 {c.contact_person}</span></td>
+                          <td>
+                            <div style={{ fontSize: 12 }}>📧 {c.email || 'No email'}</div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>📞 {c.phone || 'No phone'}</div>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: 12.5, color: '#475569', maxWidth: 260 }}>{c.business_requirements || 'Standard corporate services'}</div>
+                          </td>
+                          <td>
+                            <span style={{
+                              background: c.status === 'Active' ? '#dcfce7' : '#fee2e2',
+                              color: c.status === 'Active' ? '#15803d' : '#b91c1c',
+                              padding: '3px 9px', borderRadius: 10, fontSize: 12, fontWeight: 700
+                            }}>
+                              ● {c.status}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <button
+                                onClick={() => handleClientStatusChange(c.id, c.status === 'Active' ? 'Inactive' : 'Active')}
+                                style={{
+                                  padding: '5px 10px', fontSize: 11.5,
+                                  background: c.status === 'Active' ? '#fef2f2' : '#f0fdf4',
+                                  border: `1px solid ${c.status === 'Active' ? '#fecaca' : '#bbf7d0'}`,
+                                  color: c.status === 'Active' ? '#dc2626' : '#16a34a',
+                                  borderRadius: 6, cursor: 'pointer', fontWeight: 600
+                                }}
+                              >
+                                {c.status === 'Active' ? 'Deactivate' : 'Activate'}
+                              </button>
+                              <button
+                                onClick={() => openUploadForClient(c.id)}
+                                title="Upload Contract / Proposal"
+                                style={{
+                                  padding: '5px 10px', fontSize: 11.5,
+                                  background: '#eff6ff',
+                                  border: '1px solid #bfdbfe',
+                                  color: '#2563eb',
+                                  borderRadius: 6, cursor: 'pointer', fontWeight: 600
+                                }}
+                              >
+                                📁 Upload Doc
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ================= VIEW 4: FOLLOW-UP MANAGEMENT ================= */}
+          {activeTab === 'followups' && (
+            <div>
+              <div className="greeting-header">
+                <h1 style={{ margin: 0 }}>🔔 Follow-up Management</h1>
+                <p style={{ margin: '4px 0 0', color: '#64748b' }}>Track upcoming calls, overdue client reminders, and completed follow-ups</p>
+              </div>
+
+              {/* Follow-up Sub-tab Controls */}
+              <div style={{ display: 'flex', gap: 10, margin: '16px 0', background: '#fff', padding: '10px 14px', borderRadius: 10, border: '1px solid #e2e8f0', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>Select View:</span>
+                <button
+                  onClick={() => setFollowUpFilter('pending')}
+                  style={{
+                    padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                    background: followUpFilter === 'pending' ? '#dc2626' : '#f1f5f9', color: followUpFilter === 'pending' ? '#fff' : '#475569'
+                  }}
+                >
+                  ⏳ Pending Follow-ups ({pendingFollowUpsList.length})
+                </button>
+                <button
+                  onClick={() => setFollowUpFilter('upcoming')}
+                  style={{
+                    padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                    background: followUpFilter === 'upcoming' ? '#2563eb' : '#f1f5f9', color: followUpFilter === 'upcoming' ? '#fff' : '#475569'
+                  }}
+                >
+                  ⏰ Upcoming Follow-ups ({upcomingFollowUps.length})
+                </button>
+                <button
+                  onClick={() => setFollowUpFilter('completed')}
+                  style={{
+                    padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                    background: followUpFilter === 'completed' ? '#16a34a' : '#f1f5f9', color: followUpFilter === 'completed' ? '#fff' : '#475569'
+                  }}
+                >
+                  ✅ Completed / Converted ({completedFollowUps.length})
+                </button>
+              </div>
+
+              <div className="panel-card">
+                <div className="panel-title">
+                  <span>
+                    {followUpFilter === 'pending' && '⚠️ Pending & Overdue Follow-ups'}
+                    {followUpFilter === 'upcoming' && '⏰ Scheduled Upcoming Client Calls'}
+                    {followUpFilter === 'completed' && '✅ Completed Follow-ups & Deals'}
+                  </span>
+                </div>
+
+                {(() => {
+                  const list = followUpFilter === 'pending' ? pendingFollowUpsList : followUpFilter === 'upcoming' ? upcomingFollowUps : completedFollowUps;
+                  if (list.length === 0) {
+                    return <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No records found in this view.</p>;
+                  }
+                  return (
+                    <table className="dash-table">
+                      <thead>
+                        <tr><th>Lead / Prospect</th><th>Service Required</th><th>Assigned Executive</th><th>Follow-up Date</th><th>Remarks</th><th>Action</th></tr>
+                      </thead>
+                      <tbody>
+                        {list.map(l => (
+                          <tr key={l.id}>
+                            <td><strong>{l.lead_title}</strong><div style={{ fontSize: 11.5, color: '#64748b' }}>Source: {l.source}</div></td>
+                            <td>{l.service_required || 'Standard'}</td>
+                            <td>👤 {l.assigned_to_name || 'Rahul Verma'}</td>
+                            <td><strong style={{ color: followUpFilter === 'pending' ? '#dc2626' : '#2563eb' }}>{formatDate(l.follow_up_date)}</strong></td>
+                            <td style={{ fontSize: 12.5, color: '#475569' }}>{l.remarks || 'No remarks recorded'}</td>
+                            <td>
+                              <button
+                                onClick={() => {
+                                  setRescheduleLead(l);
+                                  setNewFollowUpDate(l.follow_up_date ? l.follow_up_date.split('T')[0] : '');
+                                  setNewRemarks(l.remarks || '');
+                                }}
+                                style={{ padding: '5px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                📅 Next Date
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* ================= VIEW 5: MY TASKS ================= */}
           {activeTab === 'tasks' && (
             <div>
               <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <h1 style={{ margin: 0 }}>📋 CRM Tasks Management</h1>
-                  <p style={{ margin: 0, color: '#64748b' }}>Manage client follow-ups, proposals, and tasks assigned by Admin</p>
+                  <h1 style={{ margin: 0 }}>📋 My CRM Tasks</h1>
+                  <p style={{ margin: '4px 0 0', color: '#64748b' }}>Assigned tasks from Admin</p>
                 </div>
                 <div style={{ display: 'flex', gap: 8, background: '#e2e8f0', padding: 4, borderRadius: 8 }}>
                   {['ALL', 'In Progress', 'Assigned', 'Completed'].map(tab => (
                     <button
                       key={tab}
                       onClick={() => setTaskFilter(tab)}
-                      style={{
-                        padding: '6px 14px', border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
-                        background: taskFilter === tab ? '#059669' : 'transparent',
-                        color: taskFilter === tab ? '#ffffff' : '#475569'
-                      }}
+                      style={{ padding: '6px 14px', border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', background: taskFilter === tab ? '#059669' : 'transparent', color: taskFilter === tab ? '#ffffff' : '#475569' }}
                     >
                       {tab}
                     </button>
@@ -272,35 +935,19 @@ export default function CrmDashboard() {
               <div className="panel-card">
                 <div className="panel-title"><span>Tasks List ({filteredTasks.length})</span></div>
                 {filteredTasks.length === 0 ? (
-                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No tasks found in "{taskFilter}"</p>
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No tasks found in "{taskFilter}".</p>
                 ) : (
                   <table className="dash-table">
-                    <thead>
-                      <tr>
-                        <th>Task Name & Details</th>
-                        <th>Assigned By</th>
-                        <th>Priority</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
+                    <thead><tr><th>Task Name</th><th>Priority</th><th>Status</th><th>Action</th></tr></thead>
                     <tbody>
                       {filteredTasks.map(t => (
                         <tr key={t.id}>
-                          <td>
-                            <strong style={{ fontSize: 14, color: '#0f172a' }}>{t.title}</strong>
-                            <div style={{ fontSize: 12, color: '#64748b', marginTop: 3 }}>{t.description || 'No description provided'}</div>
-                          </td>
-                          <td>{t.assigned_by_name || 'Admin'}</td>
+                          <td><strong>{t.title}</strong><div style={{ fontSize: 12, color: '#64748b' }}>{t.description}</div></td>
                           <td><span className={`priority-badge ${(t.priority || 'medium').toLowerCase()}`}>{t.priority}</span></td>
-                          <td><span className={`task-status-badge ${t.status.toLowerCase().replace(' ', '-')}`}>{t.status}</span></td>
+                          <td><span className={`task-status-badge ${(t.status || 'Assigned').toLowerCase().replace(' ', '-')}`}>{t.status}</span></td>
                           <td>
-                            {t.status === 'Assigned' && (
-                              <button onClick={() => handleTaskAction(t.id, 'In Progress')} className="btn-action-task start">Start</button>
-                            )}
-                            {t.status === 'In Progress' && (
-                              <button onClick={() => handleTaskAction(t.id, 'Completed')} className="btn-action-task complete">Complete</button>
-                            )}
+                            {t.status === 'Assigned' && <button onClick={() => handleTaskAction(t.id, 'In Progress')} className="btn-action-task start">Start</button>}
+                            {t.status === 'In Progress' && <button onClick={() => handleTaskAction(t.id, 'Completed')} className="btn-action-task complete">Complete</button>}
                             {t.status === 'Completed' && <span style={{ color: '#16a34a', fontWeight: 700 }}>✓ Done</span>}
                           </td>
                         </tr>
@@ -312,195 +959,101 @@ export default function CrmDashboard() {
             </div>
           )}
 
-          {/* ================= VIEW 3: SALES LEADS DEDICATED PAGE ================= */}
-          {activeTab === 'leads' && (
-            <div>
-              <div className="greeting-header">
-                <h1 style={{ margin: 0 }}>💼 Sales Leads Pipeline</h1>
-                <p style={{ margin: 0, color: '#64748b' }}>Prospects, incoming corporate inquiries, and conversion stages</p>
-              </div>
-
-              <div className="cards-row-tasks">
-                <div className="kpi-card blue"><h2>14</h2><p>New Inquiries</p></div>
-                <div className="kpi-card amber"><h2>8</h2><p>Contacted & Demo</p></div>
-                <div className="kpi-card purple"><h2>5</h2><p>Proposal Sent</p></div>
-                <div className="kpi-card green"><h2>₹4.2L</h2><p>Closed This Month</p></div>
-              </div>
-
-              <div className="panel-card">
-                <div className="panel-title"><span>Leads Pipeline</span></div>
-                <table className="dash-table">
-                  <thead>
-                    <tr>
-                      <th>Prospect Company</th>
-                      <th>Contact Person</th>
-                      <th>Deal Value</th>
-                      <th>Stage</th>
-                      <th>Next Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td><strong>TechCorp Solutions Ltd.</strong></td>
-                      <td>Sunil Deshmukh (sunil@techcorp.com)</td>
-                      <td><strong>₹3,50,000</strong></td>
-                      <td><span style={{ background: '#fef3c7', color: '#b45309', padding: '3px 9px', borderRadius: 12, fontSize: 12, fontWeight: 600 }}>Proposal Sent</span></td>
-                      <td>Follow up call on Thursday</td>
-                    </tr>
-                    <tr>
-                      <td><strong>Apex Financial Advisory</strong></td>
-                      <td>Kavita Rao (kavita@apexfin.in)</td>
-                      <td><strong>₹2,20,000</strong></td>
-                      <td><span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 9px', borderRadius: 12, fontSize: 12, fontWeight: 600 }}>Demo Scheduled</span></td>
-                      <td>Product presentation tomorrow 11 AM</td>
-                    </tr>
-                    <tr>
-                      <td><strong>Zenith Logistics Pvt. Ltd.</strong></td>
-                      <td>Amitabh Roy (amitabh@zenith.com)</td>
-                      <td><strong>₹5,80,000</strong></td>
-                      <td><span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 9px', borderRadius: 12, fontSize: 12, fontWeight: 600 }}>Negotiation / Close</span></td>
-                      <td>Send final SLA contract</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ================= VIEW 4: CLIENTS DIRECTORY DEDICATED PAGE ================= */}
-          {activeTab === 'clients' && (
-            <div>
-              <div className="greeting-header">
-                <h1 style={{ margin: 0 }}>🏢 Corporate Clients Directory</h1>
-                <p style={{ margin: 0, color: '#64748b' }}>Active business partners and enrolled corporate accounts</p>
-              </div>
-
-              <div className="panel-card">
-                <div className="panel-title"><span>Active Clients (48)</span></div>
-                <table className="dash-table">
-                  <thead>
-                    <tr>
-                      <th>Client Name</th>
-                      <th>Industry</th>
-                      <th>Primary Contact</th>
-                      <th>Account Status</th>
-                      <th>Relationship Age</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td><strong>Global IT Services Pvt. Ltd.</strong></td>
-                      <td>Information Technology</td>
-                      <td>Manish Agarwal (HR Director)</td>
-                      <td><span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 9px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>● Active Retainer</span></td>
-                      <td>1.5 Years</td>
-                    </tr>
-                    <tr>
-                      <td><strong>FinServe Capital Advisors</strong></td>
-                      <td>Banking & Finance</td>
-                      <td>Deepak Patil (COO)</td>
-                      <td><span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 9px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>● Active Retainer</span></td>
-                      <td>2 Years</td>
-                    </tr>
-                    <tr>
-                      <td><strong>Nexus Retail Brands</strong></td>
-                      <td>FMCG / E-Commerce</td>
-                      <td>Pooja Hegde (Procurement)</td>
-                      <td><span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 9px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>● Renewal Due</span></td>
-                      <td>8 Months</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ================= VIEW 5: FOLLOW-UPS DEDICATED PAGE ================= */}
-          {activeTab === 'followups' && (
-            <div>
-              <div className="greeting-header">
-                <h1 style={{ margin: 0 }}>🔔 Scheduled Follow-ups & Reminders</h1>
-                <p style={{ margin: 0, color: '#64748b' }}>Daily client calls, demo presentations, and quotation follow-ups</p>
-              </div>
-
-              <div className="panel-card">
-                <div className="panel-title"><span>Today's Follow-up Agenda</span></div>
-                <table className="dash-table">
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Client / Company</th>
-                      <th>Discussion Topic</th>
-                      <th>Contact Number</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td><strong>11:30 AM</strong></td>
-                      <td>Sunil Deshmukh (TechCorp)</td>
-                      <td>Proposal feedback & SLA review</td>
-                      <td>+91 98230 11442</td>
-                      <td><span style={{ color: '#d97706', fontWeight: 600 }}>Scheduled</span></td>
-                    </tr>
-                    <tr>
-                      <td><strong>03:00 PM</strong></td>
-                      <td>Kavita Rao (Apex Financial)</td>
-                      <td>ERP Demo for 5 department leads</td>
-                      <td>+91 94220 88219</td>
-                      <td><span style={{ color: '#d97706', fontWeight: 600 }}>Scheduled</span></td>
-                    </tr>
-                    <tr>
-                      <td><strong>05:15 PM</strong></td>
-                      <td>Nexus Retail Brands</td>
-                      <td>Quarterly retainer renewal invoice check</td>
-                      <td>+91 91580 33410</td>
-                      <td><span style={{ color: '#64748b' }}>Upcoming</span></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ================= VIEW 6: WORK LOG DEDICATED PAGE ================= */}
+          {/* ================= VIEW 6: WORK LOG ================= */}
           {activeTab === 'worklog' && (
             <div>
               <div className="greeting-header">
-                <h1 style={{ margin: 0 }}>⏱️ My Work Log History</h1>
-                <p style={{ margin: 0, color: '#64748b' }}>Your recorded work hours, break times, and completed tasks</p>
+                <h1>⏱️ My Work Log History</h1>
+                <p>Recorded sessions and break times</p>
               </div>
-
               <div className="panel-card">
                 <div className="panel-title"><span>Session Records</span></div>
-                {workLogs.length === 0 ? (
-                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 25 }}>No past sessions found.</p>
+                {safeWorkLogs.length === 0 ? (
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No past sessions found.</p>
+                ) : (
+                  <table className="dash-table">
+                    <thead><tr><th>Date</th><th>Login Time</th><th>Logout Time</th><th>Break Minutes</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {safeWorkLogs.map(log => (
+                        <tr key={log.id}>
+                          <td><strong>{formatDate(log.login_time)}</strong></td>
+                          <td>{formatTime(log.login_time)}</td>
+                          <td>{log.logout_time ? formatTime(log.logout_time) : 'In Progress'}</td>
+                          <td>{log.break_minutes || 0} mins</td>
+                          <td><span style={{ background: log.status === 'Working' ? '#dcfce7' : '#f1f5f9', color: log.status === 'Working' ? '#15803d' : '#64748b', padding: '3px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600 }}>{log.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ================= VIEW 7: BUSINESS & CLIENT DOCUMENTS ================= */}
+          {activeTab === 'documents' && (
+            <div>
+              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h1 style={{ margin: 0 }}>📁 Business & Client Documents</h1>
+                  <p style={{ margin: 0, color: '#64748b' }}>Manage contracts, client agreements, business proposals, and specifications</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setUploadDocFile(null);
+                    setShowUploadDocModal(true);
+                  }}
+                  style={{ background: '#059669', color: '#fff', padding: '10px 18px', borderRadius: 8, border: 'none', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  📤 Upload Document
+                </button>
+              </div>
+
+              <div className="panel-card" style={{ marginTop: 20 }}>
+                <div className="panel-title">
+                  <span>Repository Files ({documentsList.length})</span>
+                </div>
+                {documentsList.length === 0 ? (
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No documents uploaded yet. Click "+ Upload Document" to attach business records.</p>
                 ) : (
                   <table className="dash-table">
                     <thead>
                       <tr>
-                        <th>Date</th>
-                        <th>Login Time</th>
-                        <th>Logout Time</th>
-                        <th>Break Minutes</th>
-                        <th>Status</th>
+                        <th>Client / Entity Name</th>
+                        <th>Document Type</th>
+                        <th>Uploaded On</th>
+                        <th>Uploaded By</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {workLogs.map(log => (
-                        <tr key={log.id}>
-                          <td><strong>{new Date(log.login_time).toLocaleDateString('en-IN')}</strong></td>
-                          <td>{new Date(log.login_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
-                          <td>{log.logout_time ? new Date(log.logout_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'In Progress'}</td>
-                          <td>{log.break_minutes || 0} mins</td>
+                      {documentsList.map(doc => (
+                        <tr key={doc.id}>
+                          <td><strong style={{ fontSize: 13.5, color: '#0f172a' }}>{doc.entity_name || 'Corporate Client'}</strong></td>
                           <td>
-                            <span style={{
-                              background: log.status === 'Working' ? '#dcfce7' : '#f1f5f9',
-                              color: log.status === 'Working' ? '#15803d' : '#64748b',
-                              padding: '3px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600
-                            }}>
-                              {log.status}
+                            <span style={{ background: '#ecfdf5', color: '#065f46', padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700 }}>
+                              📄 {doc.document_type}
                             </span>
+                          </td>
+                          <td>{new Date(doc.uploaded_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                          <td>{doc.uploader_name || 'Executive'}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <a
+                                href={getDocumentUrl(doc.file_path)}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ padding: '5px 10px', background: '#059669', color: '#fff', borderRadius: 6, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              >
+                                👁️ View File
+                              </a>
+                              <button
+                                onClick={() => handleDeleteDoc(doc.id)}
+                                style={{ padding: '5px 10px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                🗑️
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -513,6 +1066,209 @@ export default function CrmDashboard() {
 
         </div>
       </main>
+
+      {/* ================= MODAL 1: ADD NEW LEAD ================= */}
+      {showLeadModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, padding: 28, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <div>
+                <h2 style={{ fontSize: 19, fontWeight: 700, margin: 0, color: '#0f172a' }}>🎯 Add New Business Lead</h2>
+                <small style={{ color: '#64748b', fontSize: 12.5 }}>Track prospect and service requirements</small>
+              </div>
+              <button type="button" onClick={() => setShowLeadModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+            </div>
+            <form onSubmit={handleCreateLead}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Lead Title *</label>
+                <input required type="text" placeholder="e.g. ERP System Consulting" value={leadForm.lead_title} onChange={(e) => setLeadForm({ ...leadForm, lead_title: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Lead Source *</label>
+                  <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }}>
+                    <option value="Website">Website</option><option value="Referral">Referral</option><option value="Social Media">Social Media</option><option value="Cold Call">Cold Call</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Product / Service Required *</label>
+                  <input required type="text" placeholder="e.g. Accounting Audit" value={leadForm.service_required} onChange={(e) => setLeadForm({ ...leadForm, service_required: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Follow-up Date</label>
+                <input type="date" value={leadForm.follow_up_date} onChange={(e) => setLeadForm({ ...leadForm, follow_up_date: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Remarks & Discussion Notes</label>
+                <textarea rows="3" placeholder="Client budget, expectations, timeline..." value={leadForm.remarks} onChange={(e) => setLeadForm({ ...leadForm, remarks: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" onClick={() => setShowLeadModal(false)} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" disabled={submittingLead} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>{submittingLead ? 'Saving...' : 'Add Lead'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 2: REGISTER CLIENT ================= */}
+      {showClientModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 500, padding: 28, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <div>
+                <h2 style={{ fontSize: 19, fontWeight: 700, margin: 0, color: '#0f172a' }}>🏢 Register New Client</h2>
+                <small style={{ color: '#64748b', fontSize: 12.5 }}>Client Management & Business Relations</small>
+              </div>
+              <button type="button" onClick={() => setShowClientModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+            </div>
+            <form onSubmit={handleCreateClient}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Company Name *</label>
+                <input required type="text" placeholder="e.g. Apex Financial Solutions Ltd." value={clientForm.company_name} onChange={(e) => setClientForm({ ...clientForm, company_name: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Contact Person *</label>
+                <input required type="text" placeholder="e.g. Mr. Sunil Deshmukh" value={clientForm.contact_person} onChange={(e) => setClientForm({ ...clientForm, contact_person: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Contact Email</label>
+                  <input type="email" placeholder="contact@company.com" value={clientForm.email} onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Contact Phone</label>
+                  <input type="text" placeholder="+91 9876543210" value={clientForm.phone} onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Business Requirements *</label>
+                <textarea rows="3" required placeholder="Specify tax consultancy, audit, recruitment needs, IT consulting..." value={clientForm.business_requirements} onChange={(e) => setClientForm({ ...clientForm, business_requirements: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Client Status</label>
+                <select value={clientForm.status} onChange={(e) => setClientForm({ ...clientForm, status: e.target.value })} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }}>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" onClick={() => setShowClientModal(false)} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" disabled={submittingClient} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>{submittingClient ? 'Saving...' : 'Register Client'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 3: RESCHEDULE FOLLOW-UP ================= */}
+      {rescheduleLead && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, padding: 26, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 18, color: '#0f172a' }}>📅 Next Follow-up Date</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#64748b' }}>For: <strong>{rescheduleLead.lead_title}</strong></p>
+            <form onSubmit={handleRescheduleSubmit}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 5 }}>Next Follow-up Date *</label>
+                <input required type="date" value={newFollowUpDate} onChange={(e) => setNewFollowUpDate(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5 }} />
+              </div>
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 5 }}>Updated Remarks</label>
+                <textarea rows="2" placeholder="Discussion summary / call notes..." value={newRemarks} onChange={(e) => setNewRemarks(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13 }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" onClick={() => setRescheduleLead(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Update Follow-up</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 4: UPLOAD BUSINESS DOCUMENT ================= */}
+      {showUploadDocModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 500, padding: 28, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <div>
+                <h2 style={{ fontSize: 19, fontWeight: 700, margin: 0, color: '#0f172a' }}>📤 Upload Business Document</h2>
+                <small style={{ color: '#64748b', fontSize: 12.5 }}>Attach contracts, agreements, proposals or client requirements</small>
+              </div>
+              <button type="button" onClick={() => setShowUploadDocModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+            </div>
+            <form onSubmit={handleUploadCrmDoc}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Select Client / Company *</label>
+                <select
+                  required
+                  value={uploadDocForm.reference_id}
+                  onChange={(e) => setUploadDocForm({ ...uploadDocForm, reference_id: e.target.value, reference_type: 'Client' })}
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5, background: '#fff' }}
+                >
+                  <option value="">-- Choose Client --</option>
+                  {safeClients.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.company_name} ({c.contact_person})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Document Type *</label>
+                <select
+                  value={uploadDocForm.document_type}
+                  onChange={(e) => setUploadDocForm({ ...uploadDocForm, document_type: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13.5, background: '#fff' }}
+                >
+                  <option value="Client Service Agreement / Contract">Client Service Agreement / Contract</option>
+                  <option value="Commercial Business Proposal">Commercial Business Proposal</option>
+                  <option value="Non-Disclosure Agreement (NDA)">Non-Disclosure Agreement (NDA)</option>
+                  <option value="Business Requirement Specification (BRD)">Business Requirement Specification (BRD)</option>
+                  <option value="MoU / Partnership Deed">MoU / Partnership Deed</option>
+                  <option value="Company Registration / Tax Proof">Company Registration / Tax Proof</option>
+                  <option value="Other Business Document">Other Business Document</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 5 }}>Choose File (PDF, Word, or Image) *</label>
+                <input
+                  required
+                  type="file"
+                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                  onChange={(e) => setUploadDocFile(e.target.files[0])}
+                  style={{ width: '100%', padding: '8px 12px', border: '1.5px dashed #059669', borderRadius: 8, fontSize: 13, background: '#f0fdf4' }}
+                />
+                {uploadDocFile && (
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#065f46' }}>
+                    Selected: <strong>{uploadDocFile.name}</strong> ({(uploadDocFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowUploadDocModal(false)}
+                  style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploadDocSubmitting}
+                  style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#059669', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {uploadDocSubmitting ? 'Uploading...' : 'Upload Document'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -1,0 +1,9 @@
+PORT=5000
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=abee
+DB_NAME=benefit_bbs
+JWT_SECRET=benefit_bbs_super_secret_key_2025
+JWT_EXPIRES_IN=1d
+CLIENT_URL=http://localhost:5173

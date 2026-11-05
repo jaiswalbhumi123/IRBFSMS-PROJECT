@@ -77,3 +77,27 @@ exports.updateJobStatus = async (req, res) => {
     res.status(500).json({ message: 'Failed to update job status' });
   }
 };
+// 1. Job Update karne ke liye
+exports.updateJob = async (req, res) => {
+  try {
+    const { title, department, description, qualification, experience_required, salary_range, location, openings, status } = req.body;
+    await pool.query(
+      `UPDATE jobs SET title=?, department=?, description=?, qualification=?, experience_required=?, salary_range=?, location=?, openings=?, status=? WHERE id=?`,
+      [title, department, description, qualification, experience_required, salary_range, location, openings, status, req.params.id]
+    );
+    res.json({ message: 'Job updated successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// 2. Job Delete karne ke liye
+exports.deleteJob = async (req, res) => {
+  try {
+    await pool.query('DELETE FROM jobs WHERE id = ?', [req.params.id]);
+    res.json({ message: 'Job deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};

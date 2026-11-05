@@ -4,65 +4,54 @@ const pool = require('../config/db');
 
 exports.login = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    let { email, password, role } = req.body;
+
+    email = email ? email.trim().toLowerCase() : '';
 
     if (!email || !password) {
-      return res.status(400).json({ message: 'Email address and password are required' });
+      return res.status(400).json({ message: 'Email and password required' });
     }
 
-    const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email.trim().toLowerCase()]);
+    const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+    
     if (users.length === 0) {
-      return res.status(401).json({ message: 'Invalid email address or password' });
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     const user = users[0];
 
-    // If role is explicitly provided and doesn't match, give a clear message
     if (role && user.role !== role) {
-      return res.status(401).json({ message: `This account is registered as ${user.role}. Please select ${user.role} to login.` });
+      return res.status(401).json({ message: `This account is not a ${role} account` });
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email address or password' });
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     if (user.status !== 'Active') {
-      return res.status(403).json({ message: 'Your account is inactive. Please contact Admin.' });
+      return res.status(403).json({ message: 'Account is inactive' });
     }
 
-    // Close any previous open sessions for this user to avoid duplicates
-    await pool.query(
-      'UPDATE sessions SET logout_time = NOW(), status = "LoggedOut" WHERE user_id = ? AND logout_time IS NULL',
+    const [sessionResult] = await pool.query(
+      'INSERT INTO sessions (user_id, login_time, status) VALUES (?, NOW(), "Working")',
       [user.id]
     );
 
-    // Create session record
-    const [sessionResult] = await pool.query(
-      'INSERT INTO sessions (user_id, module, login_time, status) VALUES (?, ?, NOW(), "Working")',
-      [user.id, user.module || null]
-    );
-
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name, module: user.module },
+      { id: user.id, email: user.email, role: user.role, name: user.name },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
     );
 
     res.json({
       token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        module: user.module
-      },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, module: user.module },
       sessionId: sessionResult.insertId
     });
   } catch (err) {
     console.error('Login error:', err);
-    res.status(500).json({ message: 'Server error occurred during login' });
+    res.status(500).json({ message: 'Server error during login' });
   }
 };
 
@@ -75,9 +64,8 @@ exports.logout = async (req, res) => {
         [sessionId]
       );
     }
-    res.json({ message: 'Logged out successfully' });
+    res.json({ message: 'Logged out' });
   } catch (err) {
-    console.error('Logout error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };

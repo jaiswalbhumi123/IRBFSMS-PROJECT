@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { broadcastEvent } = require('../utils/realtime');
 
 // Helper to get active session
 async function getActiveSession(userId, sessionId) {
@@ -78,15 +79,18 @@ exports.getDashboardData = async (req, res) => {
     const timeline = [];
     if (session && session.login_time) {
       timeline.push({
+        id: 'login',
         time: session.login_time,
-        text: 'Logged in',
-        type: 'login'
+        text: 'Logged in to dashboard',
+        type: 'login',
+        status: 'Active',
+        note: 'Workspace session active'
       });
     }
 
-    // Add task activities
+    // Add task activities from task_updates
     const [updates] = await pool.query(
-      `SELECT tu.*, t.title 
+      `SELECT tu.*, t.title, t.remarks as task_remarks, t.started_at, t.completed_at
        FROM task_updates tu 
        JOIN tasks t ON tu.task_id = t.id 
        WHERE tu.user_id = ? AND DATE(tu.created_at) = CURDATE() 
@@ -95,11 +99,59 @@ exports.getDashboardData = async (req, res) => {
     );
 
     updates.forEach(u => {
+      let actionTitle = '';
+      if (u.new_status === 'In Progress') {
+        actionTitle = `Started: ${u.title}`;
+      } else if (u.new_status === 'Completed') {
+        actionTitle = `Completed: ${u.title}`;
+      } else {
+        actionTitle = `Process update: ${u.title} (${u.new_status})`;
+      }
+
       timeline.push({
+        id: `tu-${u.id}`,
         time: u.created_at,
-        text: `${u.new_status === 'In Progress' ? 'Started' : u.new_status}: ${u.title}`,
-        type: 'task'
+        text: actionTitle,
+        type: 'task',
+        title: u.title,
+        status: u.new_status,
+        note: u.note || u.task_remarks || null,
+        completed_at: u.new_status === 'Completed' ? u.created_at : null
       });
+    });
+
+    // Also include tasks that have completed_at or started_at today even if task_updates wasn't recorded yet
+    const [todayTasks] = await pool.query(
+      `SELECT id, title, status, started_at, completed_at, remarks 
+       FROM tasks 
+       WHERE assigned_to = ? AND (DATE(started_at) = CURDATE() OR DATE(completed_at) = CURDATE() OR status IN ('In Progress', 'Completed'))`,
+      [userId]
+    );
+
+    todayTasks.forEach(t => {
+      if (t.started_at && !updates.some(u => u.task_id === t.id && u.new_status === 'In Progress')) {
+        timeline.push({
+          id: `t-start-${t.id}`,
+          time: t.started_at,
+          text: `Started: ${t.title}`,
+          type: 'task',
+          title: t.title,
+          status: 'In Progress',
+          note: t.remarks || 'Work started on task'
+        });
+      }
+      if (t.completed_at && !updates.some(u => u.task_id === t.id && u.new_status === 'Completed')) {
+        timeline.push({
+          id: `t-comp-${t.id}`,
+          time: t.completed_at,
+          text: `Completed: ${t.title}`,
+          type: 'task',
+          title: t.title,
+          status: 'Completed',
+          note: t.remarks || 'Work completed successfully',
+          completed_at: t.completed_at
+        });
+      }
     });
 
     // Add break activities
@@ -110,9 +162,12 @@ exports.getDashboardData = async (req, res) => {
       );
       breaks.forEach(b => {
         timeline.push({
+          id: `break-${b.id}`,
           time: b.start_time,
-          text: b.end_time ? `Break completed (${b.duration_minutes} min)` : 'Break started',
-          type: 'break'
+          text: b.end_time ? `Break completed (${b.duration_minutes || 0} min)` : 'Break started',
+          type: 'break',
+          status: b.end_time ? 'Completed' : 'On break',
+          note: b.end_time ? `Duration: ${b.duration_minutes || 0} minutes` : 'Work break in progress'
         });
       });
     }
@@ -203,40 +258,44 @@ exports.endBreak = async (req, res) => {
 // 5. UPDATE TASK STATUS
 exports.updateTaskStatus = async (req, res) => {
   try {
-    const taskId = req.params.id;
     const { status, remarks } = req.body;
+    const taskId = req.params.id;
     const userId = req.user.id;
 
-    const [tasks] = await pool.query('SELECT * FROM tasks WHERE id = ? AND assigned_to = ?', [taskId, userId]);
-    if (tasks.length === 0) return res.status(404).json({ message: 'Task not found or not assigned to you' });
-
-    const oldStatus = tasks[0].status;
-    let query = 'UPDATE tasks SET status = ?, remarks = IFNULL(?, remarks)';
-    const params = [status, remarks];
-
-    if (status === 'In Progress' && !tasks[0].started_at) {
-      query += ', started_at = NOW()';
-    } else if (status === 'Completed') {
-      query += ', completed_at = NOW()';
+    // 1. Get current task
+    const [tasks] = await pool.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    if (!tasks || tasks.length === 0) {
+      return res.status(404).json({ message: 'Task not found' });
     }
-    query += ' WHERE id = ?';
-    params.push(taskId);
+    const currentTask = tasks[0];
+    const oldStatus = currentTask.status;
 
-    await pool.query(query, params);
-
-    // Log update
+    // 2. Update task
     await pool.query(
-      'INSERT INTO task_updates (task_id, user_id, old_status, new_status, note) VALUES (?, ?, ?, ?, ?)',
+      `UPDATE tasks 
+       SET status = ?, 
+           remarks = COALESCE(?, remarks), 
+           started_at = IF(? = 'In Progress' AND started_at IS NULL, NOW(), started_at),
+           completed_at = IF(? = 'Completed', NOW(), completed_at) 
+       WHERE id = ?`,
+      [status, remarks, status, status, taskId]
+    );
+
+    // 3. Record task update into task_updates table
+    await pool.query(
+      `INSERT INTO task_updates (task_id, user_id, old_status, new_status, note, created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
       [taskId, userId, oldStatus, status, remarks || null]
     );
+
+    broadcastEvent('TASK_UPDATED', { taskId, status });
 
     res.json({ message: 'Task updated successfully' });
   } catch (err) {
     console.error('updateTaskStatus error:', err);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error updating task' });
   }
 };
-
 // 6. SUBMIT DAILY REPORT AND LOGOUT
 exports.submitDailyReport = async (req, res) => {
   try {

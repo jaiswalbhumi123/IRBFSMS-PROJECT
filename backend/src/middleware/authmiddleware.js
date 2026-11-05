@@ -2,11 +2,19 @@ const jwt = require('jsonwebtoken');
 
 exports.protect = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  let token = null;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
+  }
+
+  if (!token) {
     return res.status(401).json({ message: 'Not authorized, no token' });
   }
+
   try {
-    const token = authHeader.split(' ')[1];
     req.user = jwt.verify(token, process.env.JWT_SECRET);
     next();
   } catch (err) {

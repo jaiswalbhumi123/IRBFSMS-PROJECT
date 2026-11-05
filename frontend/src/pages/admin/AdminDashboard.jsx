@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
+import { toast } from 'react-toastify';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('monitor'); // 'monitor' | 'departments' | 'tasks'
+  const [usersList, setUsersList] = useState([]);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'Employee', module: 'Recruitment' });
+  const [activeTab, setActiveTab] = useState('monitor'); // 'monitor' | 'departments' | 'tasks' | 'users'
   const [employees, setEmployees] = useState([]);
   const [stats, setStats] = useState({ working: 0, onBreak: 0, loggedOut: 0, totalEmployees: 0 });
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+  const user = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
+  })();
 
   const fetchData = async () => {
     try {
@@ -15,24 +26,50 @@ export default function AdminDashboard() {
         api.get('/admin/live-employees'),
         api.get('/admin/stats')
       ]);
-      setEmployees(empRes.data);
-      setStats(statsRes.data);
+      setEmployees(Array.isArray(empRes.data) ? empRes.data : []);
+      if (statsRes.data) {
+        setStats(statsRes.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await api.get('/admin/users');
+      setUsersList(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error(err);
     }
   };
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000); // Auto refresh every 10s
-    return () => clearInterval(interval);
-  }, []);
+    if (activeTab === 'monitor') {
+      fetchData();
+      const interval = setInterval(fetchData, 10000);
+      return () => clearInterval(interval);
+    } else if (activeTab === 'users') {
+      fetchUsers();
+    }
+  }, [activeTab]);
 
-  const handleLogout = async () => {
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
     try {
-      await api.post('/auth/logout', { sessionId: localStorage.getItem('sessionId') });
-    } catch (err) {}
-    localStorage.clear();
+      await api.post('/admin/users', userForm);
+      toast.success('User added successfully!');
+      setShowUserModal(false);
+      setUserForm({ name: '', email: '', password: '', role: 'Employee', module: 'Recruitment' });
+      fetchUsers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error adding user');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     navigate('/login');
   };
 
@@ -123,6 +160,22 @@ export default function AdminDashboard() {
           🗂️ Department Overviews
         </button>
         <button
+          onClick={() => setActiveTab('users')}
+          style={{
+            padding: '8px 18px',
+            border: 'none',
+            borderRadius: '7px',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            background: activeTab === 'users' ? '#2563eb' : 'transparent',
+            color: activeTab === 'users' ? '#ffffff' : '#475569',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          👥 Users & Roles
+        </button>
+        <button
           onClick={() => setActiveTab('tasks')}
           style={{
             padding: '8px 18px',
@@ -139,6 +192,57 @@ export default function AdminDashboard() {
           📋 Staff Tasks & Workloads
         </button>
       </div>
+
+      {activeTab === 'users' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div>
+              <h1 style={{ margin: 0 }}>Users & Roles</h1>
+              <p style={{ color: '#64748b', margin: '4px 0 0' }}>Manage employee accounts, roles, and access</p>
+            </div>
+            <button onClick={() => setShowUserModal(true)} style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+              + Add New User
+            </button>
+          </div>
+
+          <div style={{ background: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0', textAlign: 'left', color: '#64748b' }}>
+                  <th style={{ padding: '12px 10px' }}>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Module</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(usersList || []).length === 0 ? (
+                  <tr>
+                    <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                      No users found. Click "+ Add New User" to register a staff account.
+                    </td>
+                  </tr>
+                ) : (
+                  (usersList || []).map(u => (
+                    <tr key={u.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '12px 10px' }}><strong>{u.name}</strong></td>
+                      <td>{u.email}</td>
+                      <td>
+                        <span style={{ background: u.role === 'Admin' ? '#fee2e2' : '#e0e7ff', color: u.role === 'Admin' ? '#b91c1c' : '#4338ca', padding: '4px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td>{u.module || '—'}</td>
+                      <td><span style={{ color: '#16a34a', fontWeight: 'bold' }}>● {u.status}</span></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ================= VIEW 1: REAL-TIME LIVE MONITOR ================= */}
       {activeTab === 'monitor' && (
@@ -186,10 +290,10 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {employees.length === 0 ? (
+                {(employees || []).length === 0 ? (
                   <tr><td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>No employees registered</td></tr>
                 ) : (
-                  employees.map(emp => (
+                  (employees || []).map(emp => (
                     <tr key={emp.id} style={{ borderBottom: '1px solid #f1f5f9', fontSize: '13.5px' }}>
                       <td style={{ padding: '14px' }}>
                         <strong style={{ color: '#0f172a' }}>{emp.name}</strong>
@@ -330,7 +434,14 @@ export default function AdminDashboard() {
               </tr>
             </thead>
             <tbody>
-              {employees.map(emp => (
+              {(employees || []).length === 0 ? (
+                <tr>
+                  <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                    No employee task workloads found.
+                  </td>
+                </tr>
+              ) : (
+                (employees || []).map(emp => (
                 <tr key={emp.id} style={{ borderBottom: '1px solid #f1f5f9', fontSize: '13.5px' }}>
                   <td style={{ padding: '14px' }}>
                     <strong style={{ color: '#0f172a' }}>{emp.name}</strong>
@@ -357,9 +468,41 @@ export default function AdminDashboard() {
                     </span>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ================= MODAL: ADD NEW EMPLOYEE / USER ================= */}
+      {showUserModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', padding: '30px', borderRadius: '16px', width: '100%', maxWidth: '450px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <h2 style={{ marginTop: 0, color: '#0f172a' }}>Add New Employee</h2>
+            <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <input required placeholder="Full Name (e.g. Sunaina)" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px' }} />
+              <input required type="email" placeholder="Official Email" value={userForm.email} onChange={e => setUserForm({...userForm, email: e.target.value})} style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px' }} />
+              <input required type="password" placeholder="Password (e.g. emp123)" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px' }} />
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <select value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value})} style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+                  <option value="Employee">Employee</option>
+                  <option value="Admin">Admin</option>
+                </select>
+                <select value={userForm.module} onChange={e => setUserForm({...userForm, module: e.target.value})} style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+                  <option value="Recruitment">Recruitment</option>
+                  <option value="Business">Business / CRM</option>
+                  <option value="Financial">Financial</option>
+                  <option value="IT">IT</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="submit" style={{ flex: 1, padding: '12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Save User</button>
+                <button type="button" onClick={() => setShowUserModal(false)} style={{ flex: 1, padding: '12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
