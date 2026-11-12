@@ -7,7 +7,9 @@ const {
   endBreak,
   updateTaskStatus,
   submitDailyReport,
-  getWorkLog
+  getWorkLog,
+  getMyWfhStatus,
+  applyWfh
 } = require('../controllers/employeecontroller');
 const { protect } = require('../middleware/authmiddleware');
 const { addClient } = require('../utils/realtime');
@@ -32,5 +34,8 @@ router.post('/break/end', endBreak);
 router.put('/tasks/:id/status', updateTaskStatus);
 router.post('/daily-report', submitDailyReport);
 router.get('/work-log', getWorkLog);
+router.get('/my-wfh-status', protect, getMyWfhStatus);
+router.post('/apply-wfh', protect, applyWfh);
+
 
 module.exports = router;

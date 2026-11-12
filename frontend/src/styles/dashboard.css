@@ -451,8 +451,14 @@ body {
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
-@media (max-width: 1024px) {
-  .charts-grid { grid-template-columns: 1fr; }
+@keyframes skeletonLoading {
+  0% { background-color: #e2e8f0; }
+  50% { background-color: #cbd5e1; }
+  100% { background-color: #e2e8f0; }
+}
+.skeleton-box {
+  animation: skeletonLoading 1.5s infinite ease-in-out;
+  border-radius: 6px;
 }
 
 /* CASE STUDY PDF DESIGN SCREEN MATCH */

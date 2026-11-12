@@ -369,3 +369,38 @@ exports.getWorkLog = async (req, res) => {
   }
 };
 
+// 8. GET LATEST WFH STATUS FOR LOGGED-IN EMPLOYEE
+exports.getMyWfhStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [rows] = await pool.query(
+      `SELECT * FROM wfh_requests WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+      [userId]
+    );
+    res.json(rows[0] || null);
+  } catch (err) {
+    console.error('getMyWfhStatus error:', err);
+    res.status(500).json({ message: 'Server error fetching WFH status' });
+  }
+};
+
+// 9. APPLY FOR WFH (EMPLOYEE INITIATED)
+exports.applyWfh = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { start_date, end_date, reason } = req.body;
+    if (!start_date || !end_date || !reason) {
+      return res.status(400).json({ message: 'Start date, end date, and reason are required' });
+    }
+    const days = Math.max(1, Math.round((new Date(end_date) - new Date(start_date)) / (1000 * 60 * 60 * 24)) + 1);
+    const [result] = await pool.query(
+      `INSERT INTO wfh_requests (user_id, start_date, end_date, days_count, reason, status) VALUES (?, ?, ?, ?, ?, 'Pending')`,
+      [userId, start_date, end_date, days, reason]
+    );
+    res.status(201).json({ message: 'WFH application submitted to Admin', id: result.insertId });
+  } catch (err) {
+    console.error('applyWfh error:', err);
+    res.status(500).json({ message: 'Server error applying for WFH' });
+  }
+};
+

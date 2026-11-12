@@ -78,18 +78,49 @@ exports.getCrmStats = async (req, res) => {
     const [[totalLeads]] = await pool.query('SELECT COUNT(*) as total FROM leads');
     const [[activeLeads]] = await pool.query("SELECT COUNT(*) as total FROM leads WHERE status IN ('Open', 'In Progress')");
     const [[convertedLeads]] = await pool.query("SELECT COUNT(*) as total FROM leads WHERE status = 'Converted'");
+    const [[lostLeads]] = await pool.query("SELECT COUNT(*) as total FROM leads WHERE status = 'Lost'");
     const [[pendingFollowUps]] = await pool.query("SELECT COUNT(*) as total FROM leads WHERE follow_up_date <= CURDATE() AND status NOT IN ('Converted', 'Lost')");
     
     const [[totalClients]] = await pool.query('SELECT COUNT(*) as total FROM clients');
     const [[activeClients]] = await pool.query("SELECT COUNT(*) as total FROM clients WHERE status = 'Active'");
 
-    res.json({
+    // Source breakdown for Donut Chart
+    const [sourceRows] = await pool.query(`
+      SELECT COALESCE(NULLIF(source, ''), 'Website') as name, COUNT(*) as value 
+      FROM leads 
+      GROUP BY source
+    `);
+
+    const funnelData = [
+      { name: 'Total Leads', value: totalLeads.total || 0 },
+      { name: 'Active', value: activeLeads.total || 0 },
+      { name: 'Converted', value: convertedLeads.total || 0 },
+      { name: 'Lost', value: lostLeads.total || 0 }
+    ];
+
+    const sourceData = sourceRows.length > 0 ? sourceRows : [
+      { name: 'Website', value: totalLeads.total || 1 },
+      { name: 'Referral', value: 0 },
+      { name: 'LinkedIn', value: 0 }
+    ];
+
+    const kpi = {
       totalLeads: totalLeads.total || 0,
       activeLeads: activeLeads.total || 0,
       convertedLeads: convertedLeads.total || 0,
+      pendingFollowups: pendingFollowUps.total || 0,
       pendingFollowUps: pendingFollowUps.total || 0,
       totalClients: totalClients.total || 0,
       activeClients: activeClients.total || 0
+    };
+
+    res.json({
+      // Flat properties for existing code
+      ...kpi,
+      // Nested structure for charts and KPI cards
+      kpi,
+      funnelData,
+      sourceData
     });
   } catch (err) {
     console.error('getCrmStats error:', err);

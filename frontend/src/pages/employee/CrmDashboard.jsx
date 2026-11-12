@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import api from '../../services/api';
 import EmployeeHeader from '../../components/EmployeeHeader';
 import '../../styles/dashboard.css';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { toast } from 'react-toastify';
 
 export default function CrmDashboard() {
   // ACTIVE VIEW TAB: 'dashboard' | 'leads' | 'clients' | 'followups' | 'tasks' | 'worklog'
@@ -10,7 +12,6 @@ export default function CrmDashboard() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [crmStats, setCrmStats] = useState(null);
 
   // 1. CLIENTS STATE & FILTERS
   const [clients, setClients] = useState([]);
@@ -26,7 +27,12 @@ export default function CrmDashboard() {
     business_requirements: '',
     status: 'Active'
   });
-
+  // CRM Dashboard Stats ke liye state
+  const [crmStats, setCrmStats] = useState({
+    kpi: { totalLeads: 0, activeLeads: 0, convertedLeads: 0, pendingFollowups: 0, totalClients: 0 },
+    funnelData: [],
+    sourceData: []
+  });
   // 2. LEADS STATE & FILTERS
   const [leads, setLeads] = useState([]);
   const [showLeadModal, setShowLeadModal] = useState(false);
@@ -61,6 +67,10 @@ export default function CrmDashboard() {
     reference_id: '',
     document_type: 'Contract / Agreement'
   });
+  // --- PAGINATION & MODAL STATES ---
+  const [viewLead, setViewLead] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [leadsPerPage] = 6;
 
   // Safe Date Helpers
   const formatDate = (val) => {
@@ -344,6 +354,13 @@ export default function CrmDashboard() {
     return matchesSearch && matchesStatus && matchesSource;
   });
 
+  //pagination calaculation
+  const indexOfLastLead = currentpage * leadsPerPage;
+  const indexOfFirstLead = indexOfLastLead - leadsPerPage;
+  const currentLeads = filteredLeads.slice(indexOfFirstLead, indexOfLastLead);
+  //if there are not filteredLeas then use safeleads 
+  const totalpages = Math.ceil(filteredLeads.length / leadsPerPage);
+
   // Filtered Clients
   const filteredClients = safeClients.filter(c => {
     const term = clientSearch.toLowerCase().trim();
@@ -445,163 +462,86 @@ export default function CrmDashboard() {
         <div className="dash-content">
 
           {/* ================= VIEW 1: CRM DASHBOARD (CASE STUDY SPEC) ================= */}
+                   {/* ================= VIEW 1: DASHBOARD OVERVIEW ================= */}
           {activeTab === 'dashboard' && (
             <div>
-              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h1 style={{ margin: 0 }}>Good morning, {user?.name?.split(' ')[0] || 'Rahul'}!</h1>
-                  <p style={{ margin: '4px 0 0', color: '#64748b' }}>{todayFormatted} · Financial & Business Services Management</p>
+              <div className="greeting-header">
+                <h1>Good morning, {user?.name?.split(' ')[0] || 'Rahul'}!</h1>
+                <p>Business / CRM Team Dashboard Overview</p>
+              </div>
+
+              {/* 5 KPI CARDS (PDF MATCH) */}
+              <div className="cards-row-tasks" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+                <div className="kpi-card blue" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
+                  <h2>{crmStats?.kpi?.totalLeads ?? totalLeadsCount}</h2>
+                  <p>Total Leads →</p>
                 </div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button
-                    onClick={() => setShowLeadModal(true)}
-                    style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
-                  >
-                    + Add New Lead
-                  </button>
-                  <button
-                    onClick={() => setShowClientModal(true)}
-                    style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
-                  >
-                    + Register Client
-                  </button>
+                <div className="kpi-card indigo" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
+                  <h2>{crmStats?.kpi?.activeLeads ?? activeLeadsCount}</h2>
+                  <p>Active Leads →</p>
+                </div>
+                <div className="kpi-card green" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
+                  <h2>{crmStats?.kpi?.convertedLeads ?? convertedLeadsCount}</h2>
+                  <p>Converted Leads</p>
+                </div>
+                <div className="kpi-card red" onClick={() => setActiveTab('followups')} style={{ cursor: 'pointer' }}>
+                  <h2>{crmStats?.kpi?.pendingFollowups ?? pendingFollowUpsCount}</h2>
+                  <p>Pending Follow-ups</p>
+                </div>
+                <div className="kpi-card purple" onClick={() => setActiveTab('clients')} style={{ cursor: 'pointer' }}>
+                  <h2>{crmStats?.kpi?.totalClients ?? safeClients.length}</h2>
+                  <p>Total Clients →</p>
                 </div>
               </div>
 
-              {/* 5 KPI CARDS PER CASE STUDY SPECIFICATION */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, margin: '20px 0' }}>
-                <div
-                  className="kpi-card blue"
-                  onClick={() => setActiveTab('leads')}
-                  style={{ cursor: 'pointer', padding: 18 }}
-                  title="Click to view all leads"
-                >
-                  <span style={{ fontSize: 24 }}>🎯</span>
-                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{totalLeadsCount}</h2>
-                  <p style={{ fontSize: 13, fontWeight: 600 }}>Total Leads →</p>
+              {/* 2 CHARTS SECTION */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                
+                {/* Chart 1: Lead Conversion Funnel */}
+                <div className="panel-card" style={{ height: '320px' }}>
+                  <div className="panel-title"><span>Lead Conversion Funnel</span></div>
+                  <ResponsiveContainer width="100%" height="85%">
+                    <BarChart data={crmStats?.funnelData || []} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                      <Tooltip cursor={{ fill: '#f1f5f9' }} />
+                      <Bar dataKey="value" fill="#10b981" barSize={40} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
 
-                <div
-                  className="kpi-card indigo"
-                  onClick={() => { setActiveTab('leads'); setLeadStatusFilter('In Progress'); }}
-                  style={{ cursor: 'pointer', padding: 18 }}
-                  title="Click to view active leads in progress"
-                >
-                  <span style={{ fontSize: 24 }}>⚡</span>
-                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{activeLeadsCount}</h2>
-                  <p style={{ fontSize: 13, fontWeight: 600 }}>Active Leads →</p>
-                </div>
-
-                <div
-                  className="kpi-card green"
-                  onClick={() => { setActiveTab('leads'); setLeadStatusFilter('Converted'); }}
-                  style={{ cursor: 'pointer', padding: 18 }}
-                  title="Click to view converted deals"
-                >
-                  <span style={{ fontSize: 24 }}>🏆</span>
-                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{convertedLeadsCount}</h2>
-                  <p style={{ fontSize: 13, fontWeight: 600 }}>Converted Leads</p>
-                </div>
-
-                <div
-                  className="kpi-card red"
-                  onClick={() => { setActiveTab('followups'); setFollowUpFilter('pending'); }}
-                  style={{ cursor: 'pointer', padding: 18 }}
-                  title="Click to view pending follow-ups"
-                >
-                  <span style={{ fontSize: 24 }}>⏳</span>
-                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{pendingFollowUpsCount}</h2>
-                  <p style={{ fontSize: 13, fontWeight: 600 }}>Pending Follow-ups</p>
-                </div>
-
-                <div
-                  className="kpi-card purple"
-                  onClick={() => setActiveTab('clients')}
-                  style={{ cursor: 'pointer', padding: 18 }}
-                  title="Click to view client statistics"
-                >
-                  <span style={{ fontSize: 24 }}>🏢</span>
-                  <h2 style={{ fontSize: 26, margin: '8px 0 2px' }}>{activeClientsCount}/{safeClients.length}</h2>
-                  <p style={{ fontSize: 13, fontWeight: 600 }}>Client Statistics (Active/Total)</p>
-                </div>
-              </div>
-
-              {/* 2-Column Section */}
-              <div className="dashboard-grid-2col">
-                {/* Active Leads Overview */}
-                <div className="panel-card">
-                  <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Active Business Opportunities</span>
-                    <button
-                      onClick={() => setActiveTab('leads')}
-                      style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
-                    >
-                      View All Leads →
-                    </button>
-                  </div>
-                  {safeLeads.length === 0 ? (
-                    <p style={{ color: '#94a3b8', textAlign: 'center', padding: 25 }}>No active leads found.</p>
-                  ) : (
-                    <table className="dash-table">
-                      <thead>
-                        <tr><th>Lead Title</th><th>Service</th><th>Follow-up</th><th>Status</th></tr>
-                      </thead>
-                      <tbody>
-                        {safeLeads.slice(0, 4).map(l => (
-                          <tr key={l.id}>
-                            <td>
-                              <strong>{l.lead_title}</strong>
-                              <div style={{ fontSize: 11.5, color: '#64748b' }}>Source: {l.source}</div>
-                            </td>
-                            <td>{l.service_required || 'Financial / IT'}</td>
-                            <td style={{ fontSize: 12, fontWeight: 600, color: '#1e40af' }}>{formatDate(l.follow_up_date)}</td>
-                            <td>
-                              <span style={{
-                                background: l.status === 'Converted' ? '#dcfce7' : l.status === 'Lost' ? '#fee2e2' : l.status === 'In Progress' ? '#fef3c7' : '#e0e7ff',
-                                color: l.status === 'Converted' ? '#15803d' : l.status === 'Lost' ? '#b91c1c' : l.status === 'In Progress' ? '#b45309' : '#4338ca',
-                                padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700
-                              }}>
-                                ● {l.status}
-                              </span>
-                            </td>
-                          </tr>
+                {/* Chart 2: Leads by Source (Donut) */}
+                <div className="panel-card" style={{ height: '320px' }}>
+                  <div className="panel-title"><span>Leads by Source</span></div>
+                  <ResponsiveContainer width="100%" height="85%">
+                    <PieChart>
+                      <Pie 
+                        data={crmStats?.sourceData || []} 
+                        cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value"
+                      >
+                        {(crmStats?.sourceData || []).map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'][index % 5]} />
                         ))}
-                      </tbody>
-                    </table>
-                  )}
+                      </Pie>
+                      <Tooltip />
+                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
 
-                {/* Follow-up Reminders */}
-                <div className="panel-card">
-                  <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Upcoming Follow-ups</span>
-                    <button
-                      onClick={() => setActiveTab('followups')}
-                      style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
-                    >
-                      Manage Follow-ups →
-                    </button>
-                  </div>
-                  {upcomingFollowUps.length === 0 ? (
-                    <p style={{ color: '#94a3b8', textAlign: 'center', padding: 25 }}>No upcoming follow-ups scheduled.</p>
-                  ) : (
-                    <table className="dash-table">
-                      <thead>
-                        <tr><th>Lead Title</th><th>Date</th><th>Remarks</th></tr>
-                      </thead>
-                      <tbody>
-                        {upcomingFollowUps.slice(0, 4).map(l => (
-                          <tr key={l.id}>
-                            <td><strong>{l.lead_title}</strong></td>
-                            <td style={{ color: '#2563eb', fontWeight: 600 }}>{formatDate(l.follow_up_date)}</td>
-                            <td style={{ fontSize: 12, color: '#64748b' }}>{l.remarks || 'Standard discussion'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
               </div>
+
+              {/* Quick Action Buttons */}
+              <div className="panel-card" style={{ display: 'flex', gap: '15px' }}>
+                <button onClick={() => setActiveTab('leads')} style={{ flex: 1, padding: '12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  + Add New Lead
+                </button>
+                <button onClick={() => setActiveTab('clients')} style={{ flex: 1, padding: '12px', background: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  + Register Client
+                </button>
+              </div>
+
             </div>
           )}
 
@@ -666,7 +606,7 @@ export default function CrmDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredLeads.map(l => (
+                      {currentLeads.map(l => (
                         <tr key={l.id}>
                           <td>
                             <strong style={{ fontSize: 14, color: '#0f172a' }}>{l.lead_title}</strong>
@@ -712,6 +652,25 @@ export default function CrmDashboard() {
               </div>
             </div>
           )}
+          {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>
+                      Showing {indexOfFirstLead + 1} to {Math.min(indexOfLastLead, filteredLeads.length)} of {filteredLeads.length} leads
+                    </span>
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                      <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} style={{ padding: '5px 10px', border: '1px solid #ccc', borderRadius: '4px', background: '#fff', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}>Prev</button>
+                      {[...Array(totalPages)].map((_, i) => (
+                        <button key={i} onClick={() => setCurrentPage(i + 1)} style={{ padding: '5px 10px', border: '1px solid #ccc', borderRadius: '4px', background: currentPage === i + 1 ? '#2563eb' : '#fff', color: currentPage === i + 1 ? '#fff' : '#000', cursor: 'pointer' }}>{i + 1}</button>
+                      ))}
+                      <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} style={{ padding: '5px 10px', border: '1px solid #ccc', borderRadius: '4px', background: '#fff', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}>Next</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
 
           {/* ================= VIEW 3: CLIENT MANAGEMENT ================= */}
           {activeTab === 'clients' && (
@@ -958,6 +917,50 @@ export default function CrmDashboard() {
               </div>
             </div>
           )}
+                {/* ================= LEAD DETAILS MODAL ================= */}
+      {viewLead && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', padding: '30px', borderRadius: '16px', width: '100%', maxWidth: '500px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#0f172a' }}>{viewLead.lead_title}</h2>
+                <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '14px' }}>Lead Details & Follow-up Info</p>
+              </div>
+              <button onClick={() => setViewLead(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>SOURCE</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>{viewLead.source}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>SERVICE REQUIRED</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>{viewLead.service_required || 'N/A'}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>FOLLOW-UP DATE</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600', color: '#2563eb' }}>{viewLead.follow_up_date ? new Date(viewLead.follow_up_date).toLocaleDateString('en-IN') : 'Not set'}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>STATUS</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>{viewLead.status}</p>
+              </div>
+            </div>
+
+            <div style={{ background: '#fffbeb', padding: '15px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+              <label style={{ fontSize: '11px', color: '#b45309', fontWeight: 'bold' }}>REMARKS / NOTES</label>
+              <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#92400e' }}>{viewLead.remarks || 'No additional notes provided.'}</p>
+            </div>
+
+            <div style={{ marginTop: '25px', textAlign: 'right' }}>
+              <button onClick={() => setViewLead(null)} style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
           {/* ================= VIEW 6: WORK LOG ================= */}
           {activeTab === 'worklog' && (

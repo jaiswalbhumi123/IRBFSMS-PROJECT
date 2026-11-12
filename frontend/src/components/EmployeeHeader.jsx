@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import DailyReportModal from './DailyReportModal';
+import { toast } from 'react-toastify';
 
 export default function EmployeeHeader({
   user,
@@ -26,6 +27,109 @@ export default function EmployeeHeader({
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchDropdownRef = useRef(null);
+
+  // WFH State & Handler
+  const [wfhStatus, setWfhStatus] = useState(null);
+  const [showWfhModal, setShowWfhModal] = useState(false);
+  const [wfhForm, setWfhForm] = useState({ start_date: '', end_date: '', reason: '' });
+  const [submittingWfh, setSubmittingWfh] = useState(false);
+
+  const fetchWfhStatus = async () => {
+    try {
+      const res = await api.get('/employee/my-wfh-status');
+      setWfhStatus(res.data);
+    } catch (err) {
+      console.error('Error fetching WFH status:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchWfhStatus();
+  }, []);
+
+  const handleApplyWfh = async (e) => {
+    e.preventDefault();
+    setSubmittingWfh(true);
+    try {
+      await api.post('/employee/apply-wfh', wfhForm);
+      toast.success('WFH application submitted to Admin!');
+      setShowWfhModal(false);
+      setWfhForm({ start_date: '', end_date: '', reason: '' });
+      fetchWfhStatus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to apply for WFH');
+    } finally {
+      setSubmittingWfh(false);
+    }
+  };
+
+  const renderWfhModal = () => {
+    if (!showWfhModal) return null;
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+        <div style={{ background: '#fff', padding: '28px', borderRadius: '14px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>🏠 Apply for Work From Home</h3>
+            <button type="button" onClick={() => setShowWfhModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}>✕</button>
+          </div>
+          
+          <form onSubmit={handleApplyWfh} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: 4 }}>Start Date</label>
+                <input 
+                  required 
+                  type="date" 
+                  value={wfhForm.start_date} 
+                  onChange={e => setWfhForm({...wfhForm, start_date: e.target.value})} 
+                  style={{ width: '100%', padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: 13 }} 
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: 4 }}>End Date</label>
+                <input 
+                  required 
+                  type="date" 
+                  value={wfhForm.end_date} 
+                  onChange={e => setWfhForm({...wfhForm, end_date: e.target.value})} 
+                  style={{ width: '100%', padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: 13 }} 
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: 4 }}>Reason & Justification</label>
+              <textarea 
+                required 
+                rows="3" 
+                placeholder="Explain reason (e.g. personal health, broadband setup, travel)..." 
+                value={wfhForm.reason} 
+                onChange={e => setWfhForm({...wfhForm, reason: e.target.value})} 
+                style={{ width: '100%', padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: 13, resize: 'vertical' }} 
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <button 
+                type="submit" 
+                disabled={submittingWfh}
+                style={{ flex: 1, padding: '11px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '7px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+              >
+                {submittingWfh ? 'Submitting...' : 'Submit to Admin'}
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setShowWfhModal(false)} 
+                style={{ flex: 1, padding: '11px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '7px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
 
   // Sync state with prop updates
   useEffect(() => {
@@ -135,13 +239,41 @@ export default function EmployeeHeader({
       <>
         {/* CASE STUDY TOPBAR */}
         <header className="dash-topbar case-study">
-          <div className="topbar-left" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="topbar-left" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className={`module-badge ${moduleBadgeColor}`}>
               {user?.module || 'Recruitment'}
             </span>
             <span className={`status-indicator ${isBreak ? 'break' : 'working'}`}>
               ● {isBreak ? 'On break' : 'Working'}
             </span>
+
+            {/* WFH STATUS BADGE */}
+            {wfhStatus && wfhStatus.status === 'Approved' ? (
+              <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                🏠 WFH Approved
+              </span>
+            ) : wfhStatus && wfhStatus.status === 'Pending' ? (
+              <span style={{ background: '#fef3c7', color: '#b45309', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                ⏳ WFH Pending
+              </span>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => setShowWfhModal(true)}
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '6px',
+                padding: '5px 12px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#334155',
+                cursor: 'pointer'
+              }}
+            >
+              🏠 Apply WFH
+            </button>
           </div>
 
           {/* GLOBAL SEARCH BAR */}
@@ -292,8 +424,8 @@ export default function EmployeeHeader({
 
         {/* CASE STUDY GREETING & TIMERS CARD (Only on Dashboard Tab) */}
         {showGreeting && (
-          <div style={{ padding: '24px 30px 0 30px' }}>
-            <div className="greeting-card">
+          <div style={{ padding: '20px 30px 0 30px' }}>
+            <div className="greeting-card" style={{ marginBottom: 0 }}>
               <div>
                 <h1>Good morning, {user?.name?.split(' ')[0] || 'Priya'}!</h1>
                 <p>{todayDateStr} · {departmentSubtitle}</p>
@@ -339,6 +471,9 @@ export default function EmployeeHeader({
           stats={stats}
           onLogoutSuccess={() => navigate('/login')}
         />
+
+        {/* Apply WFH Modal */}
+        {renderWfhModal()}
       </>
     );
   }
@@ -348,13 +483,41 @@ export default function EmployeeHeader({
     <>
       <header className="dash-topbar">
         {/* Module & Status */}
-        <div className="topbar-left">
+        <div className="topbar-left" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span className={`module-badge ${moduleBadgeColor}`}>
             {user?.module || 'Employee'}
           </span>
           <span className={`status-indicator ${isBreak ? 'break' : 'working'}`}>
             ● {isBreak ? 'On break' : 'Working'}
           </span>
+
+          {/* WFH STATUS BADGE */}
+          {wfhStatus && wfhStatus.status === 'Approved' ? (
+            <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+              🏠 WFH Approved
+            </span>
+          ) : wfhStatus && wfhStatus.status === 'Pending' ? (
+            <span style={{ background: '#fef3c7', color: '#b45309', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+              ⏳ WFH Pending
+            </span>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => setShowWfhModal(true)}
+            style={{
+              background: '#ffffff',
+              border: '1px solid #cbd5e1',
+              borderRadius: '6px',
+              padding: '5px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#334155',
+              cursor: 'pointer'
+            }}
+          >
+            🏠 Apply WFH
+          </button>
         </div>
 
         {/* Timers & Actions */}
@@ -405,6 +568,9 @@ export default function EmployeeHeader({
         stats={stats}
         onLogoutSuccess={() => navigate('/login')}
       />
+
+      {/* Apply WFH Modal */}
+      {renderWfhModal()}
     </>
   );
 }
