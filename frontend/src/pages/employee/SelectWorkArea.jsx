@@ -49,77 +49,98 @@ export default function SelectWorkArea() {
       {/* CONTENT */}
       <main className="select-content">
         <div className="select-title-box">
-          <h1>Select your work area</h1>
-          <p>Choose the module you are working in today. Your login time and all tasks will be saved under it.</p>
+          <h1>Select Your Department Workspace</h1>
+          <p>Choose the operational module for your current work session. All active timers and task activity will be tracked accordingly.</p>
         </div>
 
         <div className="cards-grid">
           {/* 1. RECRUITMENT */}
           <div className="work-card recruitment">
             <div className="card-icon-box">👥</div>
-            <h3>Recruitment Management</h3>
+            <h3>Recruitment Operations</h3>
             <ul className="bullet-points">
-              <li>Jobs and vacancies</li>
-              <li>Candidates and resumes</li>
-              <li>Interview scheduling</li>
+              <li>Job postings & vacancy management</li>
+              <li>Candidate pipeline & resume screening</li>
+              <li>Interview scheduling & evaluation</li>
             </ul>
             <div className="workflow-tagline">
-              Candidate → Job → Interview → Selection
+              Sourcing → Screening → Interview → Selection
             </div>
             <button
               onClick={() => handleSelect('Recruitment', '/employee/recruitment-dashboard')}
               className="continue-btn"
               disabled={loadingModule === 'Recruitment'}
             >
-              {loadingModule === 'Recruitment' ? 'Loading...' : 'Continue →'}
+              {loadingModule === 'Recruitment' ? 'Accessing Workspace...' : 'Enter Workspace →'}
             </button>
           </div>
 
           {/* 2. BUSINESS / CRM */}
           <div className="work-card crm">
-            <div className="card-icon-box">🤝</div>
-            <h3>Business / CRM Management</h3>
+            <div className="card-icon-box">💼</div>
+            <h3>Business & CRM Solutions</h3>
             <ul className="bullet-points">
-              <li>Clients and companies</li>
-              <li>Business leads</li>
-              <li>Follow-ups and conversion</li>
+              <li>Corporate clients & accounts directory</li>
+              <li>Sales leads & pipeline tracking</li>
+              <li>Client follow-ups & deal closing</li>
             </ul>
             <div className="workflow-tagline">
-              Lead → Follow-up → Client → Conversion
+              Prospect → Pipeline → Follow-up → Deal Closed
             </div>
             <button
               onClick={() => handleSelect('Business', '/employee/crm-dashboard')}
               className="continue-btn"
               disabled={loadingModule === 'Business'}
             >
-              {loadingModule === 'Business' ? 'Loading...' : 'Continue →'}
+              {loadingModule === 'Business' ? 'Accessing Workspace...' : 'Enter Workspace →'}
             </button>
           </div>
 
           {/* 3. FINANCIAL SERVICES */}
           <div className="work-card financial">
             <div className="card-icon-box">💳</div>
-            <h3>Financial Services Management</h3>
+            <h3>Financial Services & Lending</h3>
             <ul className="bullet-points">
-              <li>Credit card & loan enquiries</li>
-              <li>Document collection</li>
-              <li>Application status tracking</li>
+              <li>Personal & business loan applications</li>
+              <li>Credit card inquiries & KYC review</li>
+              <li>Document verification & underwriting</li>
             </ul>
             <div className="workflow-tagline">
-              Customer → Enquiry → Application → Verification → Status
+              Application → KYC Verification → Processing → Approval
             </div>
             <button
               onClick={() => handleSelect('Financial', '/employee/financial-dashboard')}
               className="continue-btn"
               disabled={loadingModule === 'Financial'}
             >
-              {loadingModule === 'Financial' ? 'Loading...' : 'Continue →'}
+              {loadingModule === 'Financial' ? 'Accessing Workspace...' : 'Enter Workspace →'}
+            </button>
+          </div>
+
+          {/* 4. IT OPERATIONS */}
+          <div className="work-card it">
+            <div className="card-icon-box">💻</div>
+            <h3>IT & Technical Operations</h3>
+            <ul className="bullet-points">
+              <li>Infrastructure health & system uptime</li>
+              <li>Incident management & bug resolution</li>
+              <li>Deployment pipelines & technical tasks</li>
+            </ul>
+            <div className="workflow-tagline">
+              Incident → Diagnosis → Resolution → Deployment
+            </div>
+            <button
+              onClick={() => handleSelect('IT', '/employee/it-dashboard')}
+              className="continue-btn"
+              disabled={loadingModule === 'IT'}
+            >
+              {loadingModule === 'IT' ? 'Accessing Workspace...' : 'Enter Workspace →'}
             </button>
           </div>
         </div>
 
         <p className="select-footer-note">
-          ⏱️ Your work session starts when you choose a module and ends when you log out.
+          Work hours and activity logging commence upon workspace selection and conclude upon logout.
         </p>
       </main>
     </div>

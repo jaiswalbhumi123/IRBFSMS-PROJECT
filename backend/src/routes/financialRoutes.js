@@ -18,6 +18,7 @@ const upload = require('../middleware/uploadmiddleware');
 
 // 1. Stats & KPIs
 router.get('/stats', protect, getFinancialStats);
+router.get('/dashboard-stats', protect, getFinancialStats);
 
 // 2. Loans
 router.post('/loans', protect, createLoanApp);
@@ -34,7 +35,5 @@ router.put('/credit-cards/:id/status', protect, updateCreditCardStatus);
 // 4. KYC Documents
 router.get('/documents', protect, getFinancialDocuments);
 router.post('/documents', protect, upload.single('document'), uploadDocument);
-
-module.exports = router;
 
 module.exports = router;

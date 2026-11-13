@@ -232,14 +232,43 @@ exports.getFinancialStats = async (req, res) => {
     const docsPending = (pendingLoanDocs?.total || 0) + (pendingCardDocs?.total || 0);
     const approved = (approvedLoans?.total || 0) + (approvedCards?.total || 0);
     const underProcess = (underProcessLoans?.total || 0) + (underProcessCards?.total || 0);
+    const totalEnquiries = totalLoans + totalCards;
 
-    res.json({
-      totalEnquiries: totalLoans + totalCards,
+    // Loan types breakdown for distribution chart
+    const [loanTypeRows] = await pool.query(`
+      SELECT COALESCE(NULLIF(loan_type, ''), 'Personal Loan') as name, COUNT(*) as value 
+      FROM loan_applications 
+      GROUP BY loan_type
+    `);
+
+    const funnelData = [
+      { name: 'Total Inquiries', value: totalEnquiries },
+      { name: 'Under Process', value: underProcess },
+      { name: 'Docs Pending', value: docsPending },
+      { name: 'Approved', value: approved }
+    ];
+
+    const productData = [
+      ...(loanTypeRows.length > 0 ? loanTypeRows : [{ name: 'Personal Loans', value: totalLoans || 1 }]),
+      { name: 'Credit Cards', value: totalCards || 0 }
+    ];
+
+    const kpi = {
+      totalEnquiries,
       totalLoans,
       totalCards,
       docsPending,
       approved,
       underProcess
+    };
+
+    res.json({
+      // Flat properties for existing compatibility
+      ...kpi,
+      // Enhanced chart and nested data
+      kpi,
+      funnelData,
+      productData
     });
   } catch (err) {
     console.error('getFinancialStats error:', err);

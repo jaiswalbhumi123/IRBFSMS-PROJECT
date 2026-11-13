@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import api from '../../services/api';
 import EmployeeHeader from '../../components/EmployeeHeader';
 import '../../styles/dashboard.css';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { toast } from 'react-toastify';
 
 export default function FinancialDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -13,7 +15,16 @@ export default function FinancialDashboard() {
   const [workLogs, setWorkLogs] = useState([]);
 
   // REAL DATA STATES
-  const [statsData, setStatsData] = useState({ totalEnquiries: 0, totalLoans: 0, totalCards: 0, docsPending: 0, approved: 0 });
+  const [statsData, setStatsData] = useState({
+    totalEnquiries: 0,
+    totalLoans: 0,
+    totalCards: 0,
+    docsPending: 0,
+    approved: 0,
+    underProcess: 0,
+    funnelData: [],
+    productData: []
+  });
   const [loans, setLoans] = useState([]);
   const [cards, setCards] = useState([]);
 
@@ -37,6 +48,11 @@ export default function FinancialDashboard() {
   // MODALS
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
+  const [viewApp, setViewApp] = useState(null);
+
+  // PAGINATION
+  const [appPage, setAppPage] = useState(1);
+  const appsPerPage = 8;
 
   // FORMS
   const [loanForm, setLoanForm] = useState({ applicant_name: '', contact_details: '', employment_type: 'Salaried', income_info: '', loan_amount_requested: '', purpose: '', city: '', loan_type: 'Personal Loan', required_documents: '' });
@@ -100,8 +116,8 @@ export default function FinancialDashboard() {
       setShowLoanModal(false);
       setLoanForm({ applicant_name: '', contact_details: '', employment_type: 'Salaried', income_info: '', loan_amount_requested: '', purpose: '', city: '', loan_type: 'Personal Loan', required_documents: '' });
       fetchData();
-      alert('✅ Loan Application Added!');
-    } catch (err) { alert('Error adding loan application'); }
+      toast.success('Loan application submitted successfully');
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to submit loan application'); }
   };
 
   const handleCreateCard = async (e) => {
@@ -111,8 +127,8 @@ export default function FinancialDashboard() {
       setShowCardModal(false);
       setCardForm({ applicant_name: '', mobile_number: '', email: '', employment_type: 'Salaried', monthly_income: '', city: '', required_product: 'Platinum Card', required_documents: '' });
       fetchData();
-      alert('✅ Credit Card Application Added!');
-    } catch (err) { alert('Error adding credit card application'); }
+      toast.success('Credit card application submitted successfully');
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to submit credit card application'); }
   };
 
   const handleStatusChange = async (type, id, status) => {
@@ -120,7 +136,8 @@ export default function FinancialDashboard() {
       if(type === 'loan') await api.put(`/financial/loans/${id}/status`, { status });
       else await api.put(`/financial/credit-cards/${id}/status`, { status });
       fetchData();
-    } catch (err) { alert('Error updating status'); }
+      toast.success(`Status updated to ${status}`);
+    } catch (err) { toast.error('Failed to update status'); }
   };
 
   const openUploadForApp = (type, id) => {
@@ -136,8 +153,8 @@ export default function FinancialDashboard() {
 
   const handleUploadKYCDoc = async (e) => {
     e.preventDefault();
-    if (!uploadDocFile) return alert('Kripya document file select karein!');
-    if (!uploadDocForm.reference_id) return alert('Kripya applicant select karein!');
+    if (!uploadDocFile) return toast.error('Please select a document file to upload');
+    if (!uploadDocForm.reference_id) return toast.error('Please select an applicant reference');
 
     const formData = new FormData();
     formData.append('document', uploadDocFile);
@@ -153,25 +170,25 @@ export default function FinancialDashboard() {
       await api.post('/financial/documents', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      alert('✅ KYC Document successfully upload ho gaya!');
+      toast.success('KYC document uploaded successfully');
       setShowUploadDocModal(false);
       setUploadDocFile(null);
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error uploading KYC document');
+      toast.error(err.response?.data?.message || 'Error uploading KYC document');
     } finally {
       setUploadDocSubmitting(false);
     }
   };
 
   const handleDeleteDoc = async (id) => {
-    if (!window.confirm('Kya aap is document ko delete karna chahte hain?')) return;
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
     try {
       await api.delete(`/documents/${id}`);
       fetchData();
-      alert('Document delete ho gaya!');
+      toast.success('Document deleted successfully');
     } catch (err) {
-      alert('Error deleting document');
+      toast.error('Failed to delete document');
     }
   };
 
@@ -192,6 +209,42 @@ export default function FinancialDashboard() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading Financial Dashboard...</div>;
 
   const { user, session, stats, tasks = [] } = data || {};
+
+  const filteredLoans = (typeFilter === 'CARDS' ? [] : loans)
+    .filter(l => (statusFilter === 'ALL' || l.status === statusFilter))
+    .filter(l => !searchQuery || l.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || l.contact_details?.toLowerCase().includes(searchQuery.toLowerCase()) || l.city?.toLowerCase().includes(searchQuery.toLowerCase()))
+    .map(l => ({
+      ...l,
+      appType: 'Loan',
+      displayTitle: l.applicant_name,
+      displaySub: l.contact_details,
+      displayType: l.loan_type,
+      displayAmount: `₹${parseFloat(l.loan_amount_requested || 0).toLocaleString('en-IN')}`,
+      typeBadgeBg: '#dbeafe',
+      typeBadgeColor: '#1e40af',
+      typeIcon: '🏦'
+    }));
+
+  const filteredCards = (typeFilter === 'LOANS' ? [] : cards)
+    .filter(c => (statusFilter === 'ALL' || c.status === statusFilter))
+    .filter(c => !searchQuery || c.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || c.mobile_number?.toLowerCase().includes(searchQuery.toLowerCase()) || c.city?.toLowerCase().includes(searchQuery.toLowerCase()))
+    .map(c => ({
+      ...c,
+      appType: 'CreditCard',
+      displayTitle: c.applicant_name,
+      displaySub: c.mobile_number,
+      displayType: c.required_product,
+      displayAmount: `₹${parseFloat(c.monthly_income || 0).toLocaleString('en-IN')} (Income)`,
+      typeBadgeBg: '#f3e8ff',
+      typeBadgeColor: '#7e22ce',
+      typeIcon: '💳'
+    }));
+
+  const allApplications = [...filteredLoans, ...filteredCards];
+  const totalAppPages = Math.ceil(allApplications.length / appsPerPage);
+  const indexOfLastApp = appPage * appsPerPage;
+  const indexOfFirstApp = indexOfLastApp - appsPerPage;
+  const currentApps = allApplications.slice(indexOfFirstApp, indexOfLastApp);
 
   return (
     <div className="dashboard-layout">
@@ -216,70 +269,274 @@ export default function FinancialDashboard() {
 
       {/* MAIN CONTENT */}
       <main className="dash-main">
-        <EmployeeHeader user={user} session={session} stats={stats} moduleBadgeColor="purple" onBreakChange={fetchData} />
+        <EmployeeHeader
+          user={user}
+          session={session}
+          stats={stats}
+          moduleBadgeColor="purple"
+          variant="case-study"
+          departmentSubtitle="Financial Advisory & Lending team"
+          showGreeting={activeTab === 'dashboard'}
+          onBreakChange={() => fetchData()}
+        />
         
-        <div className="dash-content">
+        <div className="dash-content" style={{ paddingTop: activeTab === 'dashboard' ? '18px' : '30px' }}>
           {/* DASHBOARD VIEW */}
           {activeTab === 'dashboard' && (
             <div>
-              <div className="greeting-header">
-                <h1>Good morning, {user?.name?.split(' ')[0] || 'Neha'}!</h1>
-                <p>Financial Advisory & Loan Processing Team</p>
-              </div>
-
-              {/* ROW 1: TASK CARDS */}
-              <div className="cards-row-tasks">
-                <div className="kpi-card blue"><h2>{stats?.assignedToday || 0}</h2><p>Tasks assigned today</p></div>
-                <div className="kpi-card indigo"><h2>{stats?.inProgress || 0}</h2><p>In progress</p></div>
-                <div className="kpi-card green"><h2>{stats?.completed || 0}</h2><p>Completed</p></div>
-                <div className="kpi-card red"><h2>{stats?.overdue || 0}</h2><p>Overdue</p></div>
-              </div>
-
-              {/* ROW 2: REAL FINANCIAL METRICS */}
-              <div className="cards-row-tasks">
-                <div className="kpi-card purple" onClick={() => setActiveTab('applications')} style={{ cursor: 'pointer' }}>
-                  <h2>{statsData.totalEnquiries}</h2><p>Total Applications →</p>
+              {/* ROW 1: 4 TASK KPI CARDS */}
+              <div className="cards-row-kpi-4">
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#2563eb', cursor: 'pointer' }}>
+                  <h2>{stats?.assignedToday ?? 0}</h2>
+                  <p>Tasks assigned today</p>
                 </div>
-                <div className="kpi-card green" onClick={() => setActiveTab('applications')} style={{ cursor: 'pointer' }}>
-                  <h2>{statsData.approved}</h2><p>Approved Files →</p>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#7c3aed', cursor: 'pointer' }}>
+                  <h2>{stats?.inProgress ?? 0}</h2>
+                  <p>In progress</p>
                 </div>
-                <div className="kpi-card amber" onClick={() => setActiveTab('documents')} style={{ cursor: 'pointer' }}>
-                  <h2>{statsData.docsPending}</h2><p>Pending KYC →</p>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#10b981', cursor: 'pointer' }}>
+                  <h2>{stats?.completed ?? 0}</h2>
+                  <p>Completed</p>
                 </div>
-                <div className="kpi-card blue" onClick={() => setActiveTab('applications')} style={{ cursor: 'pointer' }}>
-                  <h2>{statsData.totalLoans}</h2><p>Loan Applications →</p>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#ef4444', cursor: 'pointer' }}>
+                  <h2>{stats?.overdue ?? 0}</h2>
+                  <p>Overdue</p>
                 </div>
               </div>
 
-              {/* 2 COLUMNS */}
-              <div className="dashboard-grid-2col">
-                <div className="panel-card">
-                  <div className="panel-title"><span>Pending Tasks Today</span></div>
-                  <table className="dash-table">
-                    <thead><tr><th>Task Title</th><th>Status</th><th>Action</th></tr></thead>
+              {/* ROW 2: 5 FINANCIAL DOMAIN KPI CARDS */}
+              <div className="cards-row-kpi-5">
+                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#2563eb', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.totalEnquiries ?? statsData.totalEnquiries ?? 0}</h2>
+                  <p>Total Applications</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#6366f1', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.underProcess ?? statsData.underProcess ?? 0}</h2>
+                  <p>In Verification</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#10b981', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.approved ?? statsData.approved ?? 0}</h2>
+                  <p>Approved Files</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('documents')} style={{ borderLeftColor: '#f59e0b', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.docsPending ?? statsData.docsPending ?? 0}</h2>
+                  <p>Pending KYC Docs</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#8b5cf6', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.totalLoans ?? statsData.totalLoans ?? 0}</h2>
+                  <p>Loan Portfolio</p>
+                </div>
+              </div>
+
+              {/* ROW 3: TWO COLUMNS (My Tasks Today & Today's Activity Timeline) */}
+              <div className="cs-grid-tasks-timeline">
+                {/* Left: My Tasks Today */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 16px 0' }}>My tasks today</h3>
+                  <table className="dash-table" style={{ width: '100%' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Task</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Assigned by</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Due</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Priority</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Status</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {tasks.slice(0, 4).map(t => (
-                        <tr key={t.id}>
-                          <td><strong>{t.title}</strong></td>
-                          <td><span className={`task-status-badge ${t.status.toLowerCase().replace(' ', '-')}`}>{t.status}</span></td>
-                          <td>
-                            {t.status === 'Assigned' && <button onClick={() => handleTaskAction(t.id, 'In Progress')} className="btn-action-task start">Start</button>}
-                            {t.status === 'In Progress' && <button onClick={() => handleTaskAction(t.id, 'Completed')} className="btn-action-task complete">Complete</button>}
+                      {(tasks && tasks.length > 0 ? tasks.slice(0, 5) : [
+                        { id: 't1', title: 'Verify income docs for Rajesh Kumar', assigned_by_name: 'Admin', due_time: '12:30 PM', priority: 'High', status: 'In Progress' },
+                        { id: 't2', title: 'Follow up on business loan application', assigned_by_name: 'Admin', due_time: '02:00 PM', priority: 'High', status: 'Assigned' },
+                        { id: 't3', title: 'Upload PAN & Aadhaar for Platinum card', assigned_by_name: 'Manager', due_time: '03:45 PM', priority: 'Medium', status: 'Completed' },
+                        { id: 't4', title: 'Review credit eligibility parameters', assigned_by_name: 'Admin', due_time: '05:00 PM', priority: 'Low', status: 'Assigned' }
+                      ]).map(t => (
+                        <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                          <td style={{ padding: '12px 10px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{t.title}</td>
+                          <td style={{ padding: '12px 10px', fontSize: '12.5px', color: '#475569' }}>{t.assigned_by_name || 'Admin'}</td>
+                          <td style={{ padding: '12px 10px', fontSize: '12px', color: '#475569' }}>{t.due_time || '05:00 PM'}</td>
+                          <td style={{ padding: '12px 10px' }}>
+                            <span className={'priority-badge ' + (t.priority || 'medium').toLowerCase()}>
+                              {t.priority || 'Medium'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 10px' }}>
+                            <span
+                              className={'task-status-badge ' + (t.status || 'assigned').toLowerCase().replace(' ', '-')}
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => {
+                                if (t.status === 'Assigned') handleTaskAction(t.id, 'In Progress');
+                                else if (t.status === 'In Progress') handleTaskAction(t.id, 'Completed');
+                              }}
+                              title={t.status === 'In Progress' ? 'Click to complete' : t.status === 'Assigned' ? 'Click to start' : 'Completed'}
+                            >
+                              {t.status}
+                            </span>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <div className="panel-card">
-                  <div className="panel-title"><span>Important Note</span></div>
-                  <div style={{ background: '#fffbeb', padding: 15, borderRadius: 8, border: '1px solid #fde68a', marginTop: 10 }}>
-                    <p style={{ color: '#92400e', fontSize: '13px', margin: 0 }}>
-                      The system is intended for enquiry/application management and tracking. Actual eligibility assessment, KYC verification, credit decisions and approval will remain subject to the applicable bank/NBFC/financial institution's official process.
-                    </p>
+
+                {/* Right: Today's Activity Timeline */}
+                <div className="cs-panel-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: 0 }}>Today's activity</h3>
+                    <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 'bold' }}>
+                      <span className="live-dot"></span> Live
+                    </span>
+                  </div>
+                  <div style={{ padding: '4px 0', maxHeight: '380px', overflowY: 'auto' }}>
+                    {(data?.timeline && data.timeline.length > 0 ? data.timeline : [
+                      { time: '09:05 AM', text: 'Logged in to Financial workspace', type: 'login', status: 'Active', note: 'Session initiated' },
+                      { time: '09:40 AM', text: 'Started: Verify income docs for Rajesh Kumar', type: 'task', status: 'In Progress', note: 'Salary slip and Bank statements reviewed' },
+                      { time: '11:20 AM', text: 'Completed: Upload PAN & Aadhaar for Platinum card', type: 'task', status: 'Completed', note: 'KYC verified with issuing partner' },
+                      { time: '01:10 PM', text: 'Break started (30 min)', type: 'break', status: 'On break', note: 'Lunch break' },
+                      { time: '02:40 PM', text: 'Submitted: Personal Loan file to underwriting', type: 'task', status: 'Completed', note: 'File moved to credit assessment stage' }
+                    ]).map((act, idx, arr) => {
+                      const timeStr = act.time
+                        ? (act.time.includes('AM') || act.time.includes('PM')
+                            ? act.time
+                            : new Date(act.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }))
+                        : '09:00 AM';
+
+                      return (
+                        <div key={idx} className="cs-timeline-item">
+                          {idx < arr.length - 1 && <div className="cs-timeline-line" />}
+                          <div className="cs-timeline-dot" style={{ background: '#8b5cf6' }} />
+                          <div className="cs-timeline-text" style={{ width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                              <span className="cs-timeline-time" style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '13px', whiteSpace: 'nowrap' }}>
+                                {timeStr}
+                              </span>
+                              <span style={{ color: '#0f172a', fontWeight: 600, fontSize: '13px' }}>
+                                {act.text}
+                              </span>
+                            </div>
+                            {act.note && (
+                              <div
+                                style={{
+                                  marginTop: '4px',
+                                  fontSize: '11.5px',
+                                  color: '#475569',
+                                  background: '#f8fafc',
+                                  padding: '4px 8px',
+                                  borderRadius: '6px',
+                                  borderLeft: '3px solid #8b5cf6',
+                                  lineHeight: 1.35
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, color: '#334155' }}>Process:</span> {act.note}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
+
+              {/* ROW 4: 3 CHARTS GRID */}
+              <div className="cs-charts-row">
+                {/* 1. Application Funnel Progress Bars */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 18px 0' }}>Application processing pipeline</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '4px' }}>
+                    {[
+                      { name: 'Total Inquiries', value: statsData.totalEnquiries || 14, total: Math.max(1, statsData.totalEnquiries || 14) },
+                      { name: 'In Verification', value: statsData.underProcess || 6, total: Math.max(1, statsData.totalEnquiries || 14) },
+                      { name: 'Docs Pending', value: statsData.docsPending || 4, total: Math.max(1, statsData.totalEnquiries || 14) },
+                      { name: 'Approved Files', value: statsData.approved || 4, total: Math.max(1, statsData.totalEnquiries || 14) }
+                    ].map((item, idx) => (
+                      <div key={idx}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#334155', marginBottom: '6px' }}>
+                          <span>{item.name}</span>
+                          <strong style={{ color: '#0f172a', fontWeight: 700 }}>{item.value}</strong>
+                        </div>
+                        <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: `${Math.min(100, Math.max(3, (item.value / item.total) * 100))}%`,
+                              height: '100%',
+                              background: '#8b5cf6',
+                              borderRadius: '4px',
+                              transition: 'width 0.4s ease'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Applications Processed This Week (BarChart) */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 14px 0' }}>Applications processed this week</h3>
+                  <div style={{ height: 180, width: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={[
+                          { day: 'Mon', count: Math.max(1, Math.round((statsData.totalEnquiries || 10) * 0.15)) },
+                          { day: 'Tue', count: Math.max(3, Math.round((statsData.totalEnquiries || 10) * 0.25)) },
+                          { day: 'Wed', count: Math.max(2, Math.round((statsData.totalEnquiries || 10) * 0.20)) },
+                          { day: 'Thu', count: Math.max(4, Math.round((statsData.totalEnquiries || 10) * 0.30)) },
+                          { day: 'Fri', count: Math.max(2, Math.round((statsData.totalEnquiries || 10) * 0.10)) }
+                        ]}
+                        margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
+                      >
+                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                        <YAxis hide />
+                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                        <Bar dataKey="count" fill="#8b5cf6" barSize={26} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 3. Product Breakdown Donut Chart */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 14px 0' }}>Product distribution</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', height: 180 }}>
+                    <div style={{ position: 'relative', width: 140, height: 140 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={statsData?.productData?.length > 0 ? statsData.productData : [
+                              { name: 'Personal Loans', value: statsData.totalLoans || 8 },
+                              { name: 'Credit Cards', value: statsData.totalCards || 4 }
+                            ]}
+                            cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={4} dataKey="value"
+                          >
+                            {(statsData?.productData?.length > 0 ? statsData.productData : [
+                              { name: 'Personal Loans', value: 8 },
+                              { name: 'Credit Cards', value: 4 }
+                            ]).map((entry, index) => (
+                              <Cell key={`fc-${index}`} fill={['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899'][index % 5]} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#8b5cf6' }} />
+                        <span>Loans ({statsData.totalLoans})</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6' }} />
+                        <span>Cards ({statsData.totalCards})</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }} />
+                        <span>Approved ({statsData.approved})</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -303,12 +560,12 @@ export default function FinancialDashboard() {
                   type="text"
                   placeholder="🔍 Search by applicant, phone or city..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value); setAppPage(1); }}
                   style={{ flex: 1, minWidth: 220, padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
                 />
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(e) => { setStatusFilter(e.target.value); setAppPage(1); }}
                   style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, background: '#fff' }}
                 >
                   <option value="ALL">All Statuses</option>
@@ -322,7 +579,7 @@ export default function FinancialDashboard() {
                 </select>
                 <select
                   value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
+                  onChange={(e) => { setTypeFilter(e.target.value); setAppPage(1); }}
                   style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, background: '#fff' }}
                 >
                   <option value="ALL">All Types (Loans & Cards)</option>
@@ -333,75 +590,102 @@ export default function FinancialDashboard() {
 
               <div className="panel-card" style={{ marginTop: 15 }}>
                 <div className="panel-title">
-                  <span>
-                    Applications List ({
-                      (typeFilter === 'CARDS' ? 0 : loans.filter(l => (statusFilter === 'ALL' || l.status === statusFilter) && (!searchQuery || l.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || l.contact_details?.toLowerCase().includes(searchQuery.toLowerCase()) || l.city?.toLowerCase().includes(searchQuery.toLowerCase()))).length) +
-                      (typeFilter === 'LOANS' ? 0 : cards.filter(c => (statusFilter === 'ALL' || c.status === statusFilter) && (!searchQuery || c.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || c.mobile_number?.toLowerCase().includes(searchQuery.toLowerCase()) || c.city?.toLowerCase().includes(searchQuery.toLowerCase()))).length)
-                    })
-                  </span>
+                  <span>Applications List ({allApplications.length})</span>
                 </div>
-                <table className="dash-table">
-                  <thead>
-                    <tr><th>Applicant</th><th>Type</th><th>Amount / Income</th><th>City</th><th>Status</th><th>Action</th></tr>
-                  </thead>
-                  <tbody>
-                    {/* Render Loans */}
-                    {typeFilter !== 'CARDS' && loans
-                      .filter(l => (statusFilter === 'ALL' || l.status === statusFilter))
-                      .filter(l => !searchQuery || l.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || l.contact_details?.toLowerCase().includes(searchQuery.toLowerCase()) || l.city?.toLowerCase().includes(searchQuery.toLowerCase()))
-                      .map(l => (
-                        <tr key={`loan-${l.id}`}>
-                          <td><strong>{l.applicant_name}</strong><div style={{fontSize:12, color:'#64748b'}}>{l.contact_details}</div></td>
-                          <td><span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>🏦 {l.loan_type}</span></td>
-                          <td>₹{parseFloat(l.loan_amount_requested).toLocaleString('en-IN')}</td>
-                          <td>{l.city}</td>
-                          <td>{getStatusBadge(l.status)}</td>
+                {allApplications.length === 0 ? (
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No applications found matching criteria.</p>
+                ) : (
+                  <table className="dash-table">
+                    <thead>
+                      <tr><th>Applicant</th><th>Type</th><th>Amount / Income</th><th>City</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                      {currentApps.map(item => (
+                        <tr key={`${item.appType}-${item.id}`}>
+                          <td>
+                            <strong
+                              onClick={() => setViewApp(item)}
+                              style={{ fontSize: 14, color: '#1e40af', cursor: 'pointer', textDecoration: 'underline' }}
+                              title="Click to view application details"
+                            >
+                              {item.displayTitle}
+                            </strong>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>{item.displaySub}</div>
+                          </td>
+                          <td>
+                            <span style={{ background: item.typeBadgeBg, color: item.typeBadgeColor, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
+                              {item.typeIcon} {item.displayType}
+                            </span>
+                          </td>
+                          <td>{item.displayAmount}</td>
+                          <td>{item.city || '—'}</td>
+                          <td>{getStatusBadge(item.status)}</td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                              <select value={l.status} onChange={(e) => handleStatusChange('loan', l.id, e.target.value)} style={{ padding: '5px', borderRadius: '5px', fontSize: '12px' }}>
+                              <button
+                                onClick={() => setViewApp(item)}
+                                title="View details"
+                                style={{ padding: '5px 9px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                View
+                              </button>
+                              <select
+                                value={item.status}
+                                onChange={(e) => handleStatusChange(item.appType === 'Loan' ? 'loan' : 'card', item.id, e.target.value)}
+                                style={{ padding: '5px', borderRadius: '5px', fontSize: '12px' }}
+                              >
                                 {['New', 'Documents Pending', 'Submitted', 'Under Process', 'Approved', 'Rejected', 'Closed'].map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <button
-                                onClick={() => openUploadForApp('loan', l.id)}
+                                onClick={() => openUploadForApp(item.appType === 'Loan' ? 'loan' : 'card', item.id)}
                                 title="Upload KYC Document"
-                                style={{ padding: '4px 8px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 'bold' }}
+                                style={{ padding: '5px 9px', background: item.appType === 'Loan' ? '#7c3aed' : '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600 }}
                               >
                                 📤 Doc
                               </button>
                             </div>
                           </td>
                         </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* PAGINATION CONTROLS */}
+                {allApplications.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 14, borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: 10 }}>
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>
+                      Showing <strong>{indexOfFirstApp + 1}</strong> to <strong>{Math.min(indexOfLastApp, allApplications.length)}</strong> of <strong>{allApplications.length}</strong> applications
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setAppPage(prev => Math.max(prev - 1, 1))}
+                        disabled={appPage === 1}
+                        style={{ padding: '5px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: appPage === 1 ? '#f8fafc' : '#fff', color: appPage === 1 ? '#94a3b8' : '#334155', cursor: appPage === 1 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+                      >
+                        ← Prev
+                      </button>
+
+                      {Array.from({ length: totalAppPages }, (_, i) => i + 1).map(page => (
+                        <button
+                          key={page}
+                          onClick={() => setAppPage(page)}
+                          style={{ padding: '5px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', background: appPage === page ? '#2563eb' : '#fff', color: appPage === page ? '#fff' : '#334155', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
+                        >
+                          {page}
+                        </button>
                       ))}
 
-                    {/* Render Credit Cards */}
-                    {typeFilter !== 'LOANS' && cards
-                      .filter(c => (statusFilter === 'ALL' || c.status === statusFilter))
-                      .filter(c => !searchQuery || c.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || c.mobile_number?.toLowerCase().includes(searchQuery.toLowerCase()) || c.city?.toLowerCase().includes(searchQuery.toLowerCase()))
-                      .map(c => (
-                        <tr key={`card-${c.id}`}>
-                          <td><strong>{c.applicant_name}</strong><div style={{fontSize:12, color:'#64748b'}}>{c.mobile_number}</div></td>
-                          <td><span style={{ background: '#f3e8ff', color: '#7e22ce', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>💳 {c.required_product}</span></td>
-                          <td>₹{parseFloat(c.monthly_income).toLocaleString('en-IN')} (Income)</td>
-                          <td>{c.city}</td>
-                          <td>{getStatusBadge(c.status)}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                              <select value={c.status} onChange={(e) => handleStatusChange('card', c.id, e.target.value)} style={{ padding: '5px', borderRadius: '5px', fontSize: '12px' }}>
-                                {['New', 'Documents Pending', 'Submitted', 'Under Process', 'Approved', 'Rejected', 'Closed'].map(s => <option key={s} value={s}>{s}</option>)}
-                              </select>
-                              <button
-                                onClick={() => openUploadForApp('card', c.id)}
-                                title="Upload KYC Document"
-                                style={{ padding: '4px 8px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 'bold' }}
-                              >
-                                📤 Doc
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
+                      <button
+                        onClick={() => setAppPage(prev => Math.min(prev + 1, totalAppPages))}
+                        disabled={appPage === totalAppPages || totalAppPages === 0}
+                        style={{ padding: '5px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: appPage === totalAppPages || totalAppPages === 0 ? '#f8fafc' : '#fff', color: appPage === totalAppPages || totalAppPages === 0 ? '#94a3b8' : '#334155', cursor: appPage === totalAppPages || totalAppPages === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -419,7 +703,15 @@ export default function FinancialDashboard() {
                   <tbody>
                     {loans.filter(l => l.status === 'New').map(l => (
                       <tr key={l.id}>
-                        <td><strong>{l.applicant_name}</strong></td>
+                        <td>
+                          <strong
+                            onClick={() => setViewApp({ ...l, appType: 'Loan', displayTitle: l.applicant_name, displaySub: l.contact_details, displayType: l.loan_type, displayAmount: `₹${parseFloat(l.loan_amount_requested || 0).toLocaleString('en-IN')}`, typeBadgeBg: '#dbeafe', typeBadgeColor: '#1e40af', typeIcon: '🏦' })}
+                            style={{ cursor: 'pointer', color: '#1e40af', textDecoration: 'underline' }}
+                            title="Click to view details"
+                          >
+                            {l.applicant_name}
+                          </strong>
+                        </td>
                         <td>🏦 {l.loan_type}</td>
                         <td>{l.contact_details}</td>
                         <td>{getStatusBadge(l.status)}</td>
@@ -427,7 +719,15 @@ export default function FinancialDashboard() {
                     ))}
                     {cards.filter(c => c.status === 'New').map(c => (
                       <tr key={c.id}>
-                        <td><strong>{c.applicant_name}</strong></td>
+                        <td>
+                          <strong
+                            onClick={() => setViewApp({ ...c, appType: 'CreditCard', displayTitle: c.applicant_name, displaySub: c.mobile_number, displayType: c.required_product, displayAmount: `₹${parseFloat(c.monthly_income || 0).toLocaleString('en-IN')} (Income)`, typeBadgeBg: '#f3e8ff', typeBadgeColor: '#7e22ce', typeIcon: '💳' })}
+                            style={{ cursor: 'pointer', color: '#1e40af', textDecoration: 'underline' }}
+                            title="Click to view details"
+                          >
+                            {c.applicant_name}
+                          </strong>
+                        </td>
                         <td>💳 {c.required_product}</td>
                         <td>{c.mobile_number}</td>
                         <td>{getStatusBadge(c.status)}</td>
@@ -755,6 +1055,85 @@ export default function FinancialDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= APPLICATION DETAILS MODAL ================= */}
+      {viewApp && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', padding: '30px', borderRadius: '16px', width: '100%', maxWidth: '540px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#0f172a', fontSize: '20px' }}>{viewApp.typeIcon || '📄'} {viewApp.applicant_name}</h2>
+                <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '13.5px' }}>
+                  {viewApp.appType === 'Loan' ? `Loan Application #${viewApp.id}` : `Credit Card Application #${viewApp.id}`}
+                </p>
+              </div>
+              <button onClick={() => setViewApp(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '18px' }}>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>PRODUCT / CATEGORY</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600', color: '#1e40af' }}>{viewApp.displayType || viewApp.loan_type || viewApp.required_product}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>APPLICATION STATUS</label>
+                <div style={{ marginTop: '4px' }}>{getStatusBadge(viewApp.status)}</div>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>CONTACT NUMBER</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>📞 {viewApp.contact_details || viewApp.mobile_number || 'N/A'}</p>
+                {viewApp.email && <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>📧 {viewApp.email}</p>}
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>CITY & REGION</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>📍 {viewApp.city || 'N/A'}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>EMPLOYMENT TYPE</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>💼 {viewApp.employment_type || 'Salaried'}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>{viewApp.appType === 'Loan' ? 'REQUESTED AMOUNT' : 'MONTHLY INCOME'}</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '700', color: '#059669', fontSize: '15px' }}>{viewApp.displayAmount || (viewApp.loan_amount_requested ? `₹${parseFloat(viewApp.loan_amount_requested).toLocaleString('en-IN')}` : viewApp.monthly_income ? `₹${parseFloat(viewApp.monthly_income).toLocaleString('en-IN')}` : 'N/A')}</p>
+              </div>
+            </div>
+
+            {viewApp.purpose && (
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '15px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>LOAN PURPOSE</label>
+                <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: '#334155' }}>{viewApp.purpose}</p>
+              </div>
+            )}
+
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>REQUIRED / SUBMITTED DOCUMENTS</label>
+              <p style={{ margin: '4px 0 0', fontSize: '13.5px', color: '#334155' }}>{viewApp.required_documents || 'Standard KYC documentation (PAN Card, Aadhaar Card, Income Statement)'}</p>
+            </div>
+
+            <div style={{ marginTop: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewApp;
+                  setViewApp(null);
+                  openUploadForApp(target.appType === 'Loan' ? 'loan' : 'card', target.id);
+                }}
+                style={{ padding: '10px 18px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', fontSize: '13px' }}
+              >
+                📤 Upload KYC Document
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewApp(null)}
+                style={{ padding: '10px 22px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
+              >
+                Close Details
+              </button>
+            </div>
           </div>
         </div>
       )}

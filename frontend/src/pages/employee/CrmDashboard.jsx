@@ -34,6 +34,7 @@ export default function CrmDashboard() {
     sourceData: []
   });
   // 2. LEADS STATE & FILTERS
+  const [viewClient,setViewClient] = useState(null);
   const [leads, setLeads] = useState([]);
   const [showLeadModal, setShowLeadModal] = useState(false);
   const [submittingLead, setSubmittingLead] = useState(false);
@@ -70,7 +71,9 @@ export default function CrmDashboard() {
   // --- PAGINATION & MODAL STATES ---
   const [viewLead, setViewLead] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [leadsPerPage] = 6;
+  const leadsPerPage = 6;
+  const [clientPage, setClientPage] = useState(1);
+  const clientsPerPage = 6;
 
   // Safe Date Helpers
   const formatDate = (val) => {
@@ -114,7 +117,7 @@ export default function CrmDashboard() {
 
   const fetchStats = async () => {
     try {
-      const res = await api.get('/leads/stats');
+      const res = await api.get('/leads/dashboard-stats');
       setCrmStats(res.data);
     } catch (err) {
       console.error('Error fetching CRM stats:', err);
@@ -188,8 +191,8 @@ export default function CrmDashboard() {
 
   const handleUploadCrmDoc = async (e) => {
     e.preventDefault();
-    if (!uploadDocFile) return alert('Kripya document file select karein!');
-    if (!uploadDocForm.reference_id) return alert('Kripya client select karein!');
+    if (!uploadDocFile) return toast.error('Please select a document file to upload');
+    if (!uploadDocForm.reference_id) return toast.error('Please select a client account');
 
     const formData = new FormData();
     formData.append('file', uploadDocFile);
@@ -202,25 +205,25 @@ export default function CrmDashboard() {
       await api.post('/documents/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      alert('✅ Document successfully upload ho gaya!');
+      toast.success('Document uploaded successfully');
       setShowUploadDocModal(false);
       setUploadDocFile(null);
       fetchDocuments();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error uploading document');
+      toast.error(err.response?.data?.message || 'Error uploading document');
     } finally {
       setUploadDocSubmitting(false);
     }
   };
 
   const handleDeleteDoc = async (id) => {
-    if (!window.confirm('Kya aap is document ko delete karna chahte hain?')) return;
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
     try {
       await api.delete(`/documents/${id}`);
       fetchDocuments();
-      alert('Document delete ho gaya!');
+      toast.success('Document deleted successfully');
     } catch (err) {
-      alert('Error deleting document');
+      toast.error('Failed to delete document');
     }
   };
 
@@ -243,9 +246,9 @@ export default function CrmDashboard() {
       setLeadForm({ lead_title: '', source: 'Website', service_required: '', follow_up_date: '', remarks: '' });
       fetchLeads();
       fetchStats();
-      alert('✅ Lead added successfully!');
+      toast.success('Lead created successfully');
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to add lead');
+      toast.error(err.response?.data?.message || 'Failed to add lead');
     } finally {
       setSubmittingLead(false);
     }
@@ -255,9 +258,9 @@ export default function CrmDashboard() {
     try {
       await api.put(`/leads/${id}/status`, { status: newStatus });
       fetchLeads();
-      fetchStats();
+      toast.success(`Lead status updated to ${newStatus}`);
     } catch (err) {
-      alert('Error updating lead status');
+      toast.error('Failed to update lead status');
     }
   };
 
@@ -277,9 +280,9 @@ export default function CrmDashboard() {
       });
       fetchClients();
       fetchStats();
-      alert('✅ Client registered successfully!');
+      toast.success('Client registered successfully');
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to register client');
+      toast.error(err.response?.data?.message || 'Failed to register client');
     } finally {
       setSubmittingClient(false);
     }
@@ -289,9 +292,9 @@ export default function CrmDashboard() {
     try {
       await api.put(`/clients/${id}/status`, { status: newStatus });
       fetchClients();
-      fetchStats();
+      toast.success(`Client status updated to ${newStatus}`);
     } catch (err) {
-      alert('Error updating client status');
+      toast.error('Failed to update client status');
     }
   };
 
@@ -308,9 +311,9 @@ export default function CrmDashboard() {
       setNewRemarks('');
       fetchLeads();
       fetchStats();
-      alert('✅ Next follow-up date updated!');
+      toast.success('Follow-up scheduled successfully');
     } catch (err) {
-      alert('Failed to update follow-up');
+      toast.error('Failed to update follow-up');
     }
   };
 
@@ -354,12 +357,11 @@ export default function CrmDashboard() {
     return matchesSearch && matchesStatus && matchesSource;
   });
 
-  //pagination calaculation
-  const indexOfLastLead = currentpage * leadsPerPage;
+  // Pagination calculations for Leads
+  const indexOfLastLead = currentPage * leadsPerPage;
   const indexOfFirstLead = indexOfLastLead - leadsPerPage;
   const currentLeads = filteredLeads.slice(indexOfFirstLead, indexOfLastLead);
-  //if there are not filteredLeas then use safeleads 
-  const totalpages = Math.ceil(filteredLeads.length / leadsPerPage);
+  const totalPages = Math.ceil(filteredLeads.length / leadsPerPage);
 
   // Filtered Clients
   const filteredClients = safeClients.filter(c => {
@@ -374,6 +376,12 @@ export default function CrmDashboard() {
     const matchesStatus = clientStatusFilter === 'ALL' || c.status === clientStatusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  // Pagination calculations for Clients
+  const indexOfLastClient = clientPage * clientsPerPage;
+  const indexOfFirstClient = indexOfLastClient - clientsPerPage;
+  const currentClients = filteredClients.slice(indexOfFirstClient, indexOfLastClient);
+  const totalClientPages = Math.ceil(filteredClients.length / clientsPerPage);
 
   // Categorized Follow-ups
   const upcomingFollowUps = safeLeads.filter(l => l.follow_up_date && l.follow_up_date > todayStr && l.status !== 'Converted' && l.status !== 'Lost');
@@ -456,90 +464,270 @@ export default function CrmDashboard() {
           session={session}
           stats={stats}
           moduleBadgeColor="green"
+          variant="case-study"
+          departmentSubtitle="Business & CRM Solutions team"
+          showGreeting={activeTab === 'dashboard'}
           onBreakChange={() => fetchDashboard()}
         />
 
-        <div className="dash-content">
+        <div className="dash-content" style={{ paddingTop: activeTab === 'dashboard' ? '18px' : '30px' }}>
 
           {/* ================= VIEW 1: CRM DASHBOARD (CASE STUDY SPEC) ================= */}
-                   {/* ================= VIEW 1: DASHBOARD OVERVIEW ================= */}
           {activeTab === 'dashboard' && (
             <div>
-              <div className="greeting-header">
-                <h1>Good morning, {user?.name?.split(' ')[0] || 'Rahul'}!</h1>
-                <p>Business / CRM Team Dashboard Overview</p>
+              {/* ROW 1: 4 TASK KPI CARDS */}
+              <div className="cards-row-kpi-4">
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#2563eb', cursor: 'pointer' }}>
+                  <h2>{stats?.assignedToday ?? 0}</h2>
+                  <p>Tasks assigned today</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#7c3aed', cursor: 'pointer' }}>
+                  <h2>{stats?.inProgress ?? 0}</h2>
+                  <p>In progress</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#10b981', cursor: 'pointer' }}>
+                  <h2>{stats?.completed ?? 0}</h2>
+                  <p>Completed</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('tasks')} style={{ borderLeftColor: '#ef4444', cursor: 'pointer' }}>
+                  <h2>{stats?.overdue ?? 0}</h2>
+                  <p>Overdue</p>
+                </div>
               </div>
 
-              {/* 5 KPI CARDS (PDF MATCH) */}
-              <div className="cards-row-tasks" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-                <div className="kpi-card blue" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
+              {/* ROW 2: 5 CRM DOMAIN KPI CARDS */}
+              <div className="cards-row-kpi-5">
+                <div className="cs-kpi-card" onClick={() => setActiveTab('leads')} style={{ borderLeftColor: '#2563eb', cursor: 'pointer' }}>
                   <h2>{crmStats?.kpi?.totalLeads ?? totalLeadsCount}</h2>
-                  <p>Total Leads →</p>
+                  <p>Total Leads</p>
                 </div>
-                <div className="kpi-card indigo" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('leads')} style={{ borderLeftColor: '#10b981', cursor: 'pointer' }}>
                   <h2>{crmStats?.kpi?.activeLeads ?? activeLeadsCount}</h2>
-                  <p>Active Leads →</p>
+                  <p>Active Leads</p>
                 </div>
-                <div className="kpi-card green" onClick={() => setActiveTab('leads')} style={{ cursor: 'pointer' }}>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('leads')} style={{ borderLeftColor: '#6366f1', cursor: 'pointer' }}>
                   <h2>{crmStats?.kpi?.convertedLeads ?? convertedLeadsCount}</h2>
-                  <p>Converted Leads</p>
+                  <p>Converted Deals</p>
                 </div>
-                <div className="kpi-card red" onClick={() => setActiveTab('followups')} style={{ cursor: 'pointer' }}>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('followups')} style={{ borderLeftColor: '#f59e0b', cursor: 'pointer' }}>
                   <h2>{crmStats?.kpi?.pendingFollowups ?? pendingFollowUpsCount}</h2>
                   <p>Pending Follow-ups</p>
                 </div>
-                <div className="kpi-card purple" onClick={() => setActiveTab('clients')} style={{ cursor: 'pointer' }}>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('clients')} style={{ borderLeftColor: '#8b5cf6', cursor: 'pointer' }}>
                   <h2>{crmStats?.kpi?.totalClients ?? safeClients.length}</h2>
-                  <p>Total Clients →</p>
+                  <p>Total Clients</p>
                 </div>
               </div>
 
-              {/* 2 CHARTS SECTION */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-                
-                {/* Chart 1: Lead Conversion Funnel */}
-                <div className="panel-card" style={{ height: '320px' }}>
-                  <div className="panel-title"><span>Lead Conversion Funnel</span></div>
-                  <ResponsiveContainer width="100%" height="85%">
-                    <BarChart data={crmStats?.funnelData || []} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                      <Tooltip cursor={{ fill: '#f1f5f9' }} />
-                      <Bar dataKey="value" fill="#10b981" barSize={40} radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+              {/* ROW 3: TWO COLUMNS (My Tasks Today & Today's Activity Timeline) */}
+              <div className="cs-grid-tasks-timeline">
+                {/* Left: My Tasks Today */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 16px 0' }}>My tasks today</h3>
+                  <table className="dash-table" style={{ width: '100%' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '1px solid #f1f5f9' }}>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Task</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Assigned by</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Due</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Priority</th>
+                        <th style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(tasks && tasks.length > 0 ? tasks.slice(0, 5) : [
+                        { id: 't1', title: 'Call 5 new leads from website', assigned_by_name: 'Admin', due_time: '12:00 PM', priority: 'High', status: 'In Progress' },
+                        { id: 't2', title: 'Follow up regarding ERP demo', assigned_by_name: 'Admin', due_time: '02:30 PM', priority: 'High', status: 'Assigned' },
+                        { id: 't3', title: 'Send contract agreement to Apex Ltd', assigned_by_name: 'Admin', due_time: '04:00 PM', priority: 'Medium', status: 'Completed' },
+                        { id: 't4', title: 'Schedule product walkthrough call', assigned_by_name: 'Manager', due_time: '05:00 PM', priority: 'Medium', status: 'Assigned' }
+                      ]).map(t => (
+                        <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                          <td style={{ padding: '12px 10px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{t.title}</td>
+                          <td style={{ padding: '12px 10px', fontSize: '12.5px', color: '#475569' }}>{t.assigned_by_name || 'Admin'}</td>
+                          <td style={{ padding: '12px 10px', fontSize: '12px', color: '#475569' }}>{t.due_time || '05:00 PM'}</td>
+                          <td style={{ padding: '12px 10px' }}>
+                            <span className={'priority-badge ' + (t.priority || 'medium').toLowerCase()}>
+                              {t.priority || 'Medium'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 10px' }}>
+                            <span
+                              className={'task-status-badge ' + (t.status || 'assigned').toLowerCase().replace(' ', '-')}
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => {
+                                if (t.status === 'Assigned') handleTaskAction(t.id, 'In Progress');
+                                else if (t.status === 'In Progress') handleTaskAction(t.id, 'Completed');
+                              }}
+                              title={t.status === 'In Progress' ? 'Click to complete' : t.status === 'Assigned' ? 'Click to start' : 'Completed'}
+                            >
+                              {t.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* Chart 2: Leads by Source (Donut) */}
-                <div className="panel-card" style={{ height: '320px' }}>
-                  <div className="panel-title"><span>Leads by Source</span></div>
-                  <ResponsiveContainer width="100%" height="85%">
-                    <PieChart>
-                      <Pie 
-                        data={crmStats?.sourceData || []} 
-                        cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value"
+                {/* Right: Today's Activity Timeline */}
+                <div className="cs-panel-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: 0 }}>Today's activity</h3>
+                    <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 'bold' }}>
+                      <span className="live-dot"></span> Live
+                    </span>
+                  </div>
+                  <div style={{ padding: '4px 0', maxHeight: '380px', overflowY: 'auto' }}>
+                    {(timeline && timeline.length > 0 ? timeline : [
+                      { time: '09:00 AM', text: 'Logged in to CRM workspace', type: 'login', status: 'Active', note: 'Session initiated' },
+                      { time: '09:30 AM', text: 'Started: Call 5 new leads from website', type: 'task', status: 'In Progress', note: 'Contacted 3 corporate prospects' },
+                      { time: '11:15 AM', text: 'Completed: Send contract agreement to Apex Ltd', type: 'task', status: 'Completed', note: 'Sent via secure client portal' },
+                      { time: '01:00 PM', text: 'Break started (30 min)', type: 'break', status: 'On break', note: 'Lunch break' },
+                      { time: '02:20 PM', text: 'Scheduled follow-up for Global Tech', type: 'task', status: 'Completed', note: 'Demo call scheduled' }
+                    ]).map((act, idx, arr) => {
+                      const timeStr = act.time
+                        ? (act.time.includes('AM') || act.time.includes('PM')
+                            ? act.time
+                            : new Date(act.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }))
+                        : '09:00 AM';
+
+                      return (
+                        <div key={idx} className="cs-timeline-item">
+                          {idx < arr.length - 1 && <div className="cs-timeline-line" />}
+                          <div className="cs-timeline-dot" style={{ background: '#10b981' }} />
+                          <div className="cs-timeline-text" style={{ width: '100%' }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                              <span className="cs-timeline-time" style={{ color: '#10b981', fontWeight: 700, fontSize: '13px', whiteSpace: 'nowrap' }}>
+                                {timeStr}
+                              </span>
+                              <span style={{ color: '#0f172a', fontWeight: 600, fontSize: '13px' }}>
+                                {act.text}
+                              </span>
+                            </div>
+                            {act.note && (
+                              <div
+                                style={{
+                                  marginTop: '4px',
+                                  fontSize: '11.5px',
+                                  color: '#475569',
+                                  background: '#f8fafc',
+                                  padding: '4px 8px',
+                                  borderRadius: '6px',
+                                  borderLeft: '3px solid #10b981',
+                                  lineHeight: 1.35
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, color: '#334155' }}>Process:</span> {act.note}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* ROW 4: 3 CHARTS GRID */}
+              <div className="cs-charts-row">
+                {/* 1. CRM Pipeline Progress Bars */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 18px 0' }}>Lead conversion pipeline</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '4px' }}>
+                    {[
+                      { name: 'Total Inquiries', value: totalLeadsCount || 10, total: Math.max(1, totalLeadsCount || 10) },
+                      { name: 'Active Pipeline', value: activeLeadsCount || 6, total: Math.max(1, totalLeadsCount || 10) },
+                      { name: 'In Negotiation', value: Math.max(1, Math.round(activeLeadsCount * 0.6)), total: Math.max(1, totalLeadsCount || 10) },
+                      { name: 'Deals Closed', value: convertedLeadsCount || 2, total: Math.max(1, totalLeadsCount || 10) }
+                    ].map((item, idx) => (
+                      <div key={idx}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#334155', marginBottom: '6px' }}>
+                          <span>{item.name}</span>
+                          <strong style={{ color: '#0f172a', fontWeight: 700 }}>{item.value}</strong>
+                        </div>
+                        <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: `${Math.min(100, Math.max(3, (item.value / item.total) * 100))}%`,
+                              height: '100%',
+                              background: '#10b981',
+                              borderRadius: '4px',
+                              transition: 'width 0.4s ease'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Leads Added This Week (BarChart) */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 14px 0' }}>Leads added this week</h3>
+                  <div style={{ height: 180, width: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={[
+                          { day: 'Mon', count: Math.max(2, Math.round(totalLeadsCount * 0.15)) },
+                          { day: 'Tue', count: Math.max(4, Math.round(totalLeadsCount * 0.25)) },
+                          { day: 'Wed', count: Math.max(3, Math.round(totalLeadsCount * 0.20)) },
+                          { day: 'Thu', count: Math.max(5, Math.round(totalLeadsCount * 0.30)) },
+                          { day: 'Fri', count: Math.max(1, Math.round(totalLeadsCount * 0.10)) }
+                        ]}
+                        margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
                       >
-                        {(crmStats?.sourceData || []).map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'][index % 5]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                        <YAxis hide />
+                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                        <Bar dataKey="count" fill="#10b981" barSize={26} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
 
-              </div>
-
-              {/* Quick Action Buttons */}
-              <div className="panel-card" style={{ display: 'flex', gap: '15px' }}>
-                <button onClick={() => setActiveTab('leads')} style={{ flex: 1, padding: '12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                  + Add New Lead
-                </button>
-                <button onClick={() => setActiveTab('clients')} style={{ flex: 1, padding: '12px', background: '#059669', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                  + Register Client
-                </button>
+                {/* 3. Lead Sources Donut Chart */}
+                <div className="cs-panel-card">
+                  <h3 style={{ fontSize: '15.5px', fontWeight: 700, color: '#0f172a', margin: '0 0 14px 0' }}>Leads by channel</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', height: 180 }}>
+                    <div style={{ position: 'relative', width: 140, height: 140 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={crmStats?.sourceData?.length > 0 ? crmStats.sourceData : [
+                              { name: 'Website', value: Math.max(1, totalLeadsCount) },
+                              { name: 'Referral', value: 2 },
+                              { name: 'LinkedIn', value: 1 }
+                            ]}
+                            cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={4} dataKey="value"
+                          >
+                            {(crmStats?.sourceData?.length > 0 ? crmStats.sourceData : [
+                              { name: 'Website', value: 5 },
+                              { name: 'Referral', value: 2 },
+                              { name: 'LinkedIn', value: 1 }
+                            ]).map((entry, index) => (
+                              <Cell key={`c-${index}`} fill={['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899'][index % 5]} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }} />
+                        <span>Website</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6' }} />
+                        <span>Referral</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#8b5cf6' }} />
+                        <span>Social / Direct</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
             </div>
@@ -609,12 +797,18 @@ export default function CrmDashboard() {
                       {currentLeads.map(l => (
                         <tr key={l.id}>
                           <td>
-                            <strong style={{ fontSize: 14, color: '#0f172a' }}>{l.lead_title}</strong>
+                            <strong
+                              onClick={() => setViewLead(l)}
+                              style={{ fontSize: 14, color: '#1e40af', cursor: 'pointer', textDecoration: 'underline' }}
+                              title="Click to view lead details"
+                            >
+                              {l.lead_title}
+                            </strong>
                             <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{l.remarks || 'No remarks provided'}</div>
                           </td>
                           <td><span style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>{l.source}</span></td>
                           <td>{l.service_required || 'Financial / IT'}</td>
-                          <td><span style={{ fontSize: 12.5, color: '#334155' }}>👤 {l.assigned_to_name || 'Rahul Verma'}</span></td>
+                          <td><span style={{ fontSize: 12.5, color: '#334155' }}>{l.assigned_to_name || 'Rahul Verma'}</span></td>
                           <td><strong style={{ color: '#1e40af', fontSize: 12.5 }}>{formatDate(l.follow_up_date)}</strong></td>
                           <td>
                             <select
@@ -633,26 +827,32 @@ export default function CrmDashboard() {
                             </select>
                           </td>
                           <td>
-                            <button
-                              onClick={() => {
-                                setRescheduleLead(l);
-                                setNewFollowUpDate(l.follow_up_date ? l.follow_up_date.split('T')[0] : '');
-                                setNewRemarks(l.remarks || '');
-                              }}
-                              style={{ padding: '5px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                            >
-                              🔔 Reschedule
-                            </button>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <button
+                                onClick={() => setViewLead(l)}
+                                style={{ padding: '5px 10px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#334155', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                View
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setRescheduleLead(l);
+                                  setNewFollowUpDate(l.follow_up_date ? l.follow_up_date.split('T')[0] : '');
+                                  setNewRemarks(l.remarks || '');
+                                }}
+                                style={{ padding: '5px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                Reschedule
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
-              </div>
-            </div>
-          )}
-          {/* Pagination Controls */}
+
+                {/* Pagination Controls */}
                 {totalPages > 1 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px' }}>
                     <span style={{ fontSize: '13px', color: '#64748b' }}>
@@ -723,9 +923,17 @@ export default function CrmDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredClients.map(c => (
+                      {currentClients.map(c => (
                         <tr key={c.id}>
-                          <td><strong style={{ fontSize: 14, color: '#0f172a' }}>{c.company_name}</strong></td>
+                          <td>
+                            <strong
+                              onClick={() => setViewClient(c)}
+                              style={{ fontSize: 14, color: '#1e40af', cursor: 'pointer', textDecoration: 'underline' }}
+                              title="Click to view client details"
+                            >
+                              {c.company_name}
+                            </strong>
+                          </td>
                           <td><span style={{ fontWeight: 600, color: '#334155' }}>👤 {c.contact_person}</span></td>
                           <td>
                             <div style={{ fontSize: 12 }}>📧 {c.email || 'No email'}</div>
@@ -745,6 +953,19 @@ export default function CrmDashboard() {
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <button
+                                onClick={() => setViewClient(c)}
+                                title="View full client details"
+                                style={{
+                                  padding: '5px 10px', fontSize: 11.5,
+                                  background: '#f8fafc',
+                                  border: '1px solid #cbd5e1',
+                                  color: '#1e293b',
+                                  borderRadius: 6, cursor: 'pointer', fontWeight: 600
+                                }}
+                              >
+                                View
+                              </button>
                               <button
                                 onClick={() => handleClientStatusChange(c.id, c.status === 'Active' ? 'Inactive' : 'Active')}
                                 style={{
@@ -776,6 +997,42 @@ export default function CrmDashboard() {
                       ))}
                     </tbody>
                   </table>
+                )}
+
+                {/* CLIENT PAGINATION CONTROLS */}
+                {filteredClients.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 14, borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: 10 }}>
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>
+                      Showing <strong>{indexOfFirstClient + 1}</strong> to <strong>{Math.min(indexOfLastClient, filteredClients.length)}</strong> of <strong>{filteredClients.length}</strong> clients
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setClientPage(prev => Math.max(prev - 1, 1))}
+                        disabled={clientPage === 1}
+                        style={{ padding: '5px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: clientPage === 1 ? '#f8fafc' : '#fff', color: clientPage === 1 ? '#94a3b8' : '#334155', cursor: clientPage === 1 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+                      >
+                        ← Prev
+                      </button>
+
+                      {Array.from({ length: totalClientPages }, (_, i) => i + 1).map(page => (
+                        <button
+                          key={page}
+                          onClick={() => setClientPage(page)}
+                          style={{ padding: '5px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', background: clientPage === page ? '#2563eb' : '#fff', color: clientPage === page ? '#fff' : '#334155', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
+                        >
+                          {page}
+                        </button>
+                      ))}
+
+                      <button
+                        onClick={() => setClientPage(prev => Math.min(prev + 1, totalClientPages))}
+                        disabled={clientPage === totalClientPages || totalClientPages === 0}
+                        style={{ padding: '5px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: clientPage === totalClientPages || totalClientPages === 0 ? '#f8fafc' : '#fff', color: clientPage === totalClientPages || totalClientPages === 0 ? '#94a3b8' : '#334155', cursor: clientPage === totalClientPages || totalClientPages === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -1268,6 +1525,50 @@ export default function CrmDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= CLIENT DETAILS MODAL ================= */}
+      {viewClient && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', padding: '30px', borderRadius: '16px', width: '100%', maxWidth: '500px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#0f172a' }}>🏢 {viewClient.company_name}</h2>
+                <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '14px' }}>Client Company Details</p>
+              </div>
+              <button onClick={() => setViewClient(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>CONTACT PERSON</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>{viewClient.contact_person}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>STATUS</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600', color: viewClient.status === 'Active' ? '#16a34a' : '#dc2626' }}>● {viewClient.status}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>EMAIL ADDRESS</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>{viewClient.email || 'N/A'}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>PHONE NUMBER</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600' }}>{viewClient.phone || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>BUSINESS REQUIREMENTS</label>
+              <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#334155' }}>{viewClient.business_requirements || 'No specific requirements mentioned.'}</p>
+            </div>
+
+            <div style={{ marginTop: '25px', textAlign: 'right' }}>
+              <button onClick={() => setViewClient(null)} style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Close Details</button>
+            </div>
           </div>
         </div>
       )}

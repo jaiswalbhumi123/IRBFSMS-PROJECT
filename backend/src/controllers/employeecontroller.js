@@ -373,14 +373,24 @@ exports.getWorkLog = async (req, res) => {
 exports.getMyWfhStatus = async (req, res) => {
   try {
     const userId = req.user.id;
-    const [rows] = await pool.query(
-      `SELECT * FROM wfh_requests WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
-      [userId]
-    );
-    res.json(rows[0] || null);
+    // Aaj ki date YYYY-MM-DD format mein nikalte hain
+    const today = new Date().toISOString().split('T')[0];
+
+    // Check: Aaj ki date, WFH ke start aur end date ke BEECh mein honi chahiye
+    const [wfh] = await pool.query(`
+      SELECT * FROM wfh_requests 
+      WHERE user_id = ? 
+      AND status = 'Approved' 
+      AND ? >= start_date 
+      AND ? <= end_date
+    `, [userId, today, today]);
+
+    res.json({
+      is_wfh_today: wfh.length > 0,
+      details: wfh[0] || null
+    });
   } catch (err) {
-    console.error('getMyWfhStatus error:', err);
-    res.status(500).json({ message: 'Server error fetching WFH status' });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
