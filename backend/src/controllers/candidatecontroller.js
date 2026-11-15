@@ -179,11 +179,11 @@ exports.getRecruitmentStats = async (req, res) => {
     const [shortlisted] = await pool.query("SELECT COUNT(*) as c FROM candidates WHERE status = 'Shortlisted'");
     
     // 4. Candidates Added This Week (Last 7 days data)
-    const [weeklyData] = await pool.query(`
+        const [weeklyData] = await pool.query(`
       SELECT DATE_FORMAT(created_at, '%a') as day, COUNT(*) as count 
       FROM candidates 
       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      GROUP BY DATE(created_at)
+      GROUP BY DATE_FORMAT(created_at, '%a')
     `);
 
     res.json({
