@@ -52,6 +52,16 @@ exports.getDashboardData = async (req, res) => {
     };
 
     if (session && session.login_time) {
+      let currentOngoingBreak = 0;
+      if (session.status === 'Break') {
+        const [activeBreak] = await pool.query(
+          'SELECT TIMESTAMPDIFF(MINUTE, start_time, NOW()) AS ongoing_break FROM breaks WHERE session_id = ? AND end_time IS NULL ORDER BY id DESC LIMIT 1',
+          [session.id]
+        );
+        currentOngoingBreak = activeBreak[0]?.ongoing_break || 0;
+      }
+      sessionInfo.breakMinutes = (session.break_minutes || 0) + currentOngoingBreak;
+
       const [diff] = await pool.query(
         'SELECT TIMESTAMPDIFF(MINUTE, login_time, NOW()) AS working_mins FROM sessions WHERE id = ?',
         [session.id]
@@ -162,13 +172,23 @@ exports.getDashboardData = async (req, res) => {
       );
       breaks.forEach(b => {
         timeline.push({
-          id: `break-${b.id}`,
+          id: `break-start-${b.id}`,
           time: b.start_time,
-          text: b.end_time ? `Break completed (${b.duration_minutes || 0} min)` : 'Break started',
+          text: 'Took official break',
           type: 'break',
-          status: b.end_time ? 'Completed' : 'On break',
-          note: b.end_time ? `Duration: ${b.duration_minutes || 0} minutes` : 'Work break in progress'
+          status: 'On break',
+          note: 'Work paused for break'
         });
+        if (b.end_time) {
+          timeline.push({
+            id: `break-end-${b.id}`,
+            time: b.end_time,
+            text: `Resumed work (Break: ${b.duration_minutes || 0} min)`,
+            type: 'break_end',
+            status: 'Working',
+            note: `Break duration: ${b.duration_minutes || 0} minutes`
+          });
+        }
       });
     }
 

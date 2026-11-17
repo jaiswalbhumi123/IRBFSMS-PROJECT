@@ -35,37 +35,45 @@ export default function AdminDashboard() {
       return {};
     }
   }, []);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const isToday = selectedDate === todayStr;
+
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [empDetails, setEmpDetails] = useState(null);
 
-    // Modal Live Update Logic (Har 10 sec mein refresh hoga)
+  // Modal Live Update Logic (Har 10 sec mein refresh hoga agar today hai)
   useEffect(() => {
     let interval;
     if (selectedEmp) {
       const fetchLiveDetails = async (showLoading = false) => {
-        if (showLoading) setLoadingDetails(true);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay for skeleton effect
+        if (showLoading && !empDetails) setLoadingDetails(true);
         try {
-          const res = await api.get(`/admin/employee/${selectedEmp}`);
-          setEmpDetails(res.data);
+          const res = await api.get(`/admin/employee/${selectedEmp}?date=${selectedDate}`);
+          if (res.data) {
+            setEmpDetails(res.data);
+          }
         } catch (err) {
-          if (showLoading) toast.error('Failed to load employee details');
+          console.error('Failed to load employee details:', err);
+          if (showLoading && !empDetails) toast.error('Failed to load employee details');
         } finally {
           if (showLoading) setLoadingDetails(false);
         }
       };
 
-      fetchLiveDetails(true); // Pehli baar load hote time skeleton dikhega
+      fetchLiveDetails(true); // Pehli baar load
       
-      // Har 10 second mein background mein update karega
-      interval = setInterval(() => fetchLiveDetails(false), 10000); 
+      // Har 10 second mein background mein update karega if current day
+      if (isToday) {
+        interval = setInterval(() => fetchLiveDetails(false), 10000); 
+      }
     }
     
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [selectedEmp]);
+  }, [selectedEmp, selectedDate]);
   
 
   // ================= 1. LIVE MONITOR & STATS STATE (Screen 9) =================
@@ -150,11 +158,12 @@ export default function AdminDashboard() {
   const WORK_BREAK_COLORS = ['#16a34a', '#f59e0b'];
 
   // ================= DATA FETCHERS =================
-  const fetchLiveMonitorData = async () => {
+  const fetchLiveMonitorData = async (dateOverride) => {
     try {
+      const targetDate = dateOverride !== undefined ? dateOverride : selectedDate;
       const [empRes, statsRes] = await Promise.all([
-        api.get('/admin/live-employees'),
-        api.get('/admin/stats')
+        api.get(`/admin/live-employees?date=${targetDate}`),
+        api.get(`/admin/stats?date=${targetDate}`)
       ]);
       setEmployees(Array.isArray(empRes.data) ? empRes.data : []);
       if (statsRes.data) {
@@ -209,11 +218,13 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (activeTab === 'overview') {
       fetchOverviewData();
-      fetchLiveMonitorData();
+      fetchLiveMonitorData(selectedDate);
     } else if (activeTab === 'monitor') {
-      fetchLiveMonitorData();
-      const interval = setInterval(fetchLiveMonitorData, 10000);
-      return () => clearInterval(interval);
+      fetchLiveMonitorData(selectedDate);
+      if (isToday) {
+        const interval = setInterval(() => fetchLiveMonitorData(selectedDate), 10000);
+        return () => clearInterval(interval);
+      }
     } else if (activeTab === 'wfh') {
       fetchWfhRequests();
     } else if (activeTab === 'reports') {
@@ -221,7 +232,7 @@ export default function AdminDashboard() {
     } else if (activeTab === 'users') {
       fetchUsers();
     }
-  }, [activeTab]);
+  }, [activeTab, selectedDate]);
 
   // Initial load
   useEffect(() => {
@@ -351,20 +362,20 @@ export default function AdminDashboard() {
             className={activeTab === 'overview' ? 'active' : ''}
             onClick={() => { setActiveTab('overview'); fetchOverviewData(); }}
           >
-            📊 Overview (Screen 2)
+            📊 Dashboard
           </a>
           <a
             className={activeTab === 'monitor' ? 'active' : ''}
             onClick={() => { setActiveTab('monitor'); fetchLiveMonitorData(); }}
           >
-            ● Live Monitor (Screen 9)
+            ● Live Monitor
           </a>
           <a
             className={activeTab === 'wfh' ? 'active' : ''}
             onClick={() => { setActiveTab('wfh'); fetchWfhRequests(); }}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           >
-            <span>🏠 WFH Requests (Screen 11)</span>
+            <span>🏠 WFH Requests</span>
             {overviewData?.kpis?.pendingWfh > 0 && (
               <span style={{ background: '#ef4444', color: '#fff', fontSize: '10.5px', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>
                 {overviewData.kpis.pendingWfh}
@@ -375,7 +386,7 @@ export default function AdminDashboard() {
             className={activeTab === 'reports' ? 'active' : ''}
             onClick={() => { setActiveTab('reports'); fetchReportsAnalytics(); }}
           >
-            📈 Reports & Analytics (Screen 13)
+            📈 Reports & Analytics
           </a>
 
           <p className="nav-section-title">WORKFORCE MANAGEMENT</p>
@@ -383,7 +394,7 @@ export default function AdminDashboard() {
             className={activeTab === 'users' ? 'active' : ''}
             onClick={() => { setActiveTab('users'); fetchUsers(); }}
           >
-            👥 Users & Roles (Screen 12)
+            👥 Users & Roles
           </a>
           <a
             className={activeTab === 'tasks' ? 'active' : ''}
@@ -495,143 +506,22 @@ export default function AdminDashboard() {
 
         {/* CONTENT BODY */}
         <div className="dash-content" style={{ padding: '24px 30px 40px 30px' }}>
+
+      {/* ========================================================================= */}
+      {/* 🔴 A. ADMIN DASHBOARD OVERVIEW & REAL-TIME INTERACTIVE RECHARTS            */}
+      {/* ========================================================================= */}
+      {activeTab === 'overview' && (
+        <div>
           {/* HEADER INTRO BANNER */}
           <div style={{ marginBottom: '22px' }}>
             <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.5px' }}>
-              Enterprise Operations Management
+              Enterprise Operations Overview
             </h1>
             <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13.5px' }}>
               Live workforce telemetry, workload distribution, attendance tracking, and executive analytics
             </p>
           </div>
 
-          {/* ================= TAB NAVIGATION SWITCHER ================= */}
-      <div style={{ display: 'flex', gap: '8px', background: '#e2e8f0', padding: '5px', borderRadius: '10px', width: 'fit-content', marginBottom: '22px', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setActiveTab('overview')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '7px',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeTab === 'overview' ? '#2563eb' : 'transparent',
-            color: activeTab === 'overview' ? '#ffffff' : '#475569',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          📊 Admin Overview (Screen 2)
-        </button>
-
-        <button
-          onClick={() => setActiveTab('monitor')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '7px',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeTab === 'monitor' ? '#2563eb' : 'transparent',
-            color: activeTab === 'monitor' ? '#ffffff' : '#475569',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          ● Real-time Live Monitor (Screen 9)
-        </button>
-
-        <button
-          onClick={() => setActiveTab('wfh')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '7px',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeTab === 'wfh' ? '#2563eb' : 'transparent',
-            color: activeTab === 'wfh' ? '#ffffff' : '#475569',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          🏠 WFH Requests (Screen 11) {overviewData.kpis.pendingWfh > 0 && <span style={{ background: '#ef4444', color: '#fff', padding: '1px 6px', borderRadius: 10, fontSize: 11, marginLeft: 4 }}>{overviewData.kpis.pendingWfh}</span>}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('reports')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '7px',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeTab === 'reports' ? '#2563eb' : 'transparent',
-            color: activeTab === 'reports' ? '#ffffff' : '#475569',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          📈 Reports & Analytics (Screen 13)
-        </button>
-
-        <button
-          onClick={() => setActiveTab('users')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '7px',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeTab === 'users' ? '#2563eb' : 'transparent',
-            color: activeTab === 'users' ? '#ffffff' : '#475569',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          👥 Users & Roles (Screen 12)
-        </button>
-
-        <button
-          onClick={() => setActiveTab('departments')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '7px',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeTab === 'departments' ? '#2563eb' : 'transparent',
-            color: activeTab === 'departments' ? '#ffffff' : '#475569',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          🗂️ Departments
-        </button>
-
-        <button
-          onClick={() => setActiveTab('tasks')}
-          style={{
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '7px',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeTab === 'tasks' ? '#2563eb' : 'transparent',
-            color: activeTab === 'tasks' ? '#ffffff' : '#475569',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          📋 Staff Tasks & Workloads
-        </button>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 🔴 A. SCREEN 2: ADMIN OVERVIEW & REAL-TIME INTERACTIVE RECHARTS            */}
-      {/* ========================================================================= */}
-      {activeTab === 'overview' && (
-        <div>
           {/* 6 EXECUTIVE KPI CARDS */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px', marginBottom: '24px' }}>
             <div style={{ background: '#fff', padding: '18px 20px', borderRadius: '12px', borderLeft: '4px solid #2563eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
@@ -763,93 +653,35 @@ export default function AdminDashboard() {
 
           </div>
 
-          {/* ROW 2: WEEKLY TASKS VELOCITY BAR CHART & QUICK ACTIONS */}
-          <div style={{ display: 'grid', gridTemplateColumns: '62% 38%', gap: '20px' }}>
-            
-            {/* WEEKLY TASKS VELOCITY (Bar Chart) */}
-            <div style={{ background: '#fff', padding: '24px', borderRadius: '14px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <div>
-                  <h3 style={{ margin: 0, color: '#0f172a', fontSize: '16px', fontWeight: 700 }}>
-                    📊 Weekly Tasks Delivery Velocity (Assigned vs Completed)
-                  </h3>
-                  <small style={{ color: '#64748b', fontSize: '12px' }}>Operational efficiency through Monday to Friday</small>
-                </div>
-                <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 700 }}>
-                  94.2% Completion Rate
-                </span>
-              </div>
-
-              <div style={{ width: '100%', height: 240 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={overviewData.weeklyTasks}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                    <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
-                    <Tooltip contentStyle={{ background: '#0f172a', borderRadius: '8px', color: '#fff', border: 'none', fontSize: '12px' }} />
-                    <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 600 }} />
-                    <Bar dataKey="assigned" name="Tasks Assigned" fill="#93c5fd" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="completed" name="Tasks Completed" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* QUICK ACTIONS HUB */}
-            <div style={{ background: '#fff', padding: '24px', borderRadius: '14px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          {/* ROW 2: WEEKLY TASKS VELOCITY BAR CHART */}
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '14px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h3 style={{ margin: '0 0 6px', color: '#0f172a', fontSize: '16px', fontWeight: 700 }}>⚡ Executive Quick Actions</h3>
-                <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '12.5px' }}>Direct shortcuts to core governance and tracking tools</p>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div 
-                    onClick={() => navigate('/admin/assign-task')} 
-                    style={{ padding: '12px 14px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: 13, color: '#1e293b' }}>➕ Delegate New Operational Task</strong>
-                      <div style={{ fontSize: 11.5, color: '#64748b' }}>Assign tasks to HR, IT, CRM, or Finance staff</div>
-                    </div>
-                    <span style={{ fontSize: 16 }}>→</span>
-                  </div>
-
-                  <div 
-                    onClick={() => setShowUserModal(true)} 
-                    style={{ padding: '12px 14px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: 13, color: '#1e293b' }}>👤 Register New Staff Account</strong>
-                      <div style={{ fontSize: 11.5, color: '#64748b' }}>Add employee credentials and assign department</div>
-                    </div>
-                    <span style={{ fontSize: 16 }}>→</span>
-                  </div>
-
-                  <div 
-                    onClick={() => setActiveTab('wfh')} 
-                    style={{ padding: '12px 14px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: 13, color: '#1e293b' }}>🏠 Review Pending WFH Requests</strong>
-                      <div style={{ fontSize: 11.5, color: '#64748b' }}>Approve or reject remote work applications</div>
-                    </div>
-                    <span style={{ fontSize: 16 }}>→</span>
-                  </div>
-
-                  <div 
-                    onClick={() => setActiveTab('reports')} 
-                    style={{ padding: '12px 14px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: 13, color: '#1e293b' }}>📊 Export Executive Reports</strong>
-                      <div style={{ fontSize: 11.5, color: '#64748b' }}>Download Excel / CSV workforce analytics</div>
-                    </div>
-                    <span style={{ fontSize: 16 }}>→</span>
-                  </div>
-                </div>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '16px', fontWeight: 700 }}>
+                  📊 Weekly Tasks Delivery Velocity (Assigned vs Completed)
+                </h3>
+                <small style={{ color: '#64748b', fontSize: '12px' }}>Operational efficiency through Monday to Friday</small>
               </div>
+              <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 700 }}>
+                94.2% Completion Rate
+              </span>
             </div>
 
+            <div style={{ width: '100%', height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={overviewData.weeklyTasks}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
+                  <Tooltip contentStyle={{ background: '#0f172a', borderRadius: '8px', color: '#fff', border: 'none', fontSize: '12px' }} />
+                  <Legend wrapperStyle={{ fontSize: '12px', fontWeight: 600 }} />
+                  <Bar dataKey="assigned" name="Tasks Assigned" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="completed" name="Tasks Completed" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
+
         </div>
       )}
 
@@ -862,7 +694,7 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px', flexWrap: 'wrap', gap: 12 }}>
             <div>
               <h1 style={{ margin: 0, fontSize: '22px', color: '#0f172a', fontWeight: 800 }}>
-                📈 Executive Workforce Reports & Analytics (Screen 13)
+                📈 Executive Workforce Reports & Analytics
               </h1>
               <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '13px' }}>
                 Departmental productivity, logged working hours, break efficiency, and exportable audit records
@@ -1098,7 +930,7 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px' }}>
             <div>
               <h1 style={{ margin: 0, fontSize: '22px', color: '#0f172a', fontWeight: 800 }}>
-                🏠 Work From Home (WFH) Requests (Screen 11)
+                🏠 Work From Home (WFH) Requests
               </h1>
               <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '13px' }}>
                 Review employee remote working applications, verify reasons, and Approve or Reject
@@ -1259,19 +1091,99 @@ export default function AdminDashboard() {
       {/* ================= VIEW: REAL-TIME LIVE MONITOR (Screen 9) ================= */}
       {activeTab === 'monitor' && (
         <div>
+          {/* HEADER & DATE FILTER CONTROLS */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <h2 style={{ margin: 0, color: '#0f172a', fontSize: '22px', fontWeight: 800, letterSpacing: '-0.5px' }}>
+                  Live Monitor
+                </h2>
+                {isToday ? (
+                  <span style={{ color: '#16a34a', fontWeight: 700, fontSize: '12px', background: '#dcfce7', padding: '3px 10px', borderRadius: '20px' }}>
+                    ● Real-time Live
+                  </span>
+                ) : (
+                  <span style={{ color: '#475569', fontWeight: 700, fontSize: '12px', background: '#f1f5f9', padding: '3px 10px', borderRadius: '20px', border: '1px solid #cbd5e1' }}>
+                    📜 Historical Record ({selectedDate})
+                  </span>
+                )}
+              </div>
+              <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '13px' }}>
+                {isToday ? 'Real-time telemetry, active attendance, and live break monitoring' : `Workforce telemetry and activity audit log for ${selectedDate}`}
+              </p>
+            </div>
+
+            {/* DIRECT DATE PICKER INPUT */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', padding: '6px 14px', borderRadius: '10px', border: '1.5px solid #cbd5e1', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                📅 Filter Date:
+              </span>
+              <input 
+                type="date" 
+                value={selectedDate}
+                max={todayStr}
+                onChange={(e) => {
+                  const newDate = e.target.value;
+                  if (newDate) {
+                    setSelectedDate(newDate);
+                    fetchLiveMonitorData(newDate);
+                  }
+                }}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  color: '#0f172a',
+                  fontWeight: 600,
+                  outline: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: '#f8fafc'
+                }}
+              />
+              {!isToday && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(todayStr);
+                    fetchLiveMonitorData(todayStr);
+                  }}
+                  style={{
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    color: '#2563eb',
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Reset Today
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* STATS CARDS */}
           <div style={{ display: 'flex', gap: '20px', marginBottom: '25px' }}>
             <div style={{ flex: 1, background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderLeft: '4px solid #16a34a' }}>
               <h3 style={{ margin: 0, fontSize: '26px', color: '#0f172a', fontWeight: 700 }}>{stats.working}</h3>
-              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>Active Working Now</p>
+              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>
+                {isToday ? 'Active Working Now' : 'Attended / Logged In'}
+              </p>
             </div>
             <div style={{ flex: 1, background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderLeft: '4px solid #f59e0b' }}>
               <h3 style={{ margin: 0, fontSize: '26px', color: '#0f172a', fontWeight: 700 }}>{stats.onBreak}</h3>
-              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>On Official Break</p>
+              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>
+                {isToday ? 'On Official Break' : 'Took Official Break'}
+              </p>
             </div>
             <div style={{ flex: 1, background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderLeft: '4px solid #ef4444' }}>
               <h3 style={{ margin: 0, fontSize: '26px', color: '#0f172a', fontWeight: 700 }}>{stats.loggedOut}</h3>
-              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>Logged Out / Idle</p>
+              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '13px', fontWeight: 500 }}>
+                {isToday ? 'Logged Out / Idle' : 'Absent / Not Logged In'}
+              </p>
             </div>
             <div style={{ flex: 1, background: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderLeft: '4px solid #2563eb' }}>
               <h3 style={{ margin: 0, fontSize: '26px', color: '#0f172a', fontWeight: 700 }}>{stats.totalEmployees}</h3>
@@ -1283,12 +1195,22 @@ export default function AdminDashboard() {
           <div style={{ background: '#fff', padding: '24px', borderRadius: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
               <div>
-                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '17px', fontWeight: 700 }}>Live Workforce Status</h3>
-                <small style={{ color: '#64748b', fontSize: '12.5px' }}>Auto-refreshes every 10 seconds via WebSocket/HTTP Polling</small>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '17px', fontWeight: 700 }}>
+                  {isToday ? 'Live Workforce Status' : `Workforce Status on ${selectedDate}`}
+                </h3>
+                <small style={{ color: '#64748b', fontSize: '12.5px' }}>
+                  {isToday ? 'Auto-refreshes every 10 seconds via WebSocket/HTTP Polling' : `Historical records for ${selectedDate}`}
+                </small>
               </div>
-              <span style={{ color: '#16a34a', fontWeight: 700, fontSize: '12.5px', background: '#dcfce7', padding: '4px 10px', borderRadius: '20px' }}>
-                ● Real-time Live
-              </span>
+              {isToday ? (
+                <span style={{ color: '#16a34a', fontWeight: 700, fontSize: '12.5px', background: '#dcfce7', padding: '4px 10px', borderRadius: '20px' }}>
+                  ● Real-time Live
+                </span>
+              ) : (
+                <span style={{ color: '#475569', fontWeight: 700, fontSize: '12.5px', background: '#f1f5f9', padding: '4px 10px', borderRadius: '20px', border: '1px solid #cbd5e1' }}>
+                  📅 {selectedDate}
+                </span>
+              )}
             </div>
             
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -1296,9 +1218,9 @@ export default function AdminDashboard() {
                 <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#64748b', fontSize: '12.5px' }}>
                   <th style={{ padding: '12px 14px' }}>Employee</th>
                   <th style={{ padding: '12px 14px' }}>Department</th>
-                  <th style={{ padding: '12px 14px' }}>Current Activity Status</th>
+                  <th style={{ padding: '12px 14px' }}>{isToday ? 'Current Activity Status' : 'Status on Date'}</th>
                   <th style={{ padding: '12px 14px' }}>Login Timestamp</th>
-                  <th style={{ padding: '12px 14px' }}>Today's Current Task</th>
+                  <th style={{ padding: '12px 14px' }}>{isToday ? "Today's Current Task" : "Task Activity on Date"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1308,7 +1230,23 @@ export default function AdminDashboard() {
                   (employees || []).map(emp => (
                     <tr 
                       key={emp.id} 
-                      onClick={() => setSelectedEmp(emp.id)}
+                      onClick={() => {
+                        setSelectedEmp(emp.id);
+                        setEmpDetails({
+                          profile: {
+                            id: emp.id,
+                            name: emp.name,
+                            email: emp.email,
+                            module: emp.module,
+                            session_status: emp.session_status || 'Not Logged In',
+                            login_time: emp.login_time || null,
+                            working_minutes: emp.working_minutes || 0,
+                            break_minutes: emp.break_minutes || 0
+                          },
+                          tasks: emp.current_task ? [{ id: 'current', title: emp.current_task, priority: 'Medium', status: 'In Progress' }] : [],
+                          timeline: []
+                        });
+                      }}
                       title="Click to view live employee telemetry & activity"
                       style={{ 
                         borderBottom: '1px solid #f1f5f9', 
@@ -1338,14 +1276,18 @@ export default function AdminDashboard() {
                       <td style={{ padding: '14px' }}>
                         <span style={{ 
                           padding: '4px 10px', borderRadius: '20px', fontSize: '11.5px', fontWeight: 700,
-                          background: emp.session_status === 'Working' ? '#dcfce7' : emp.session_status === 'Break' ? '#fef3c7' : '#fee2e2',
-                          color: emp.session_status === 'Working' ? '#15803d' : emp.session_status === 'Break' ? '#b45309' : '#b91c1c'
+                          background: emp.session_status === 'Working' ? '#dcfce7' : emp.session_status === 'Break' ? '#fef3c7' : emp.session_status === 'LoggedOut' ? '#fee2e2' : '#f1f5f9',
+                          color: emp.session_status === 'Working' ? '#15803d' : emp.session_status === 'Break' ? '#b45309' : emp.session_status === 'LoggedOut' ? '#b91c1c' : '#64748b'
                         }}>
-                          ● {emp.session_status || 'Logged Out'}
+                          ● {emp.session_status === 'Working' ? 'Working' : emp.session_status === 'Break' ? 'On Break' : emp.session_status === 'LoggedOut' ? 'Logged Out' : 'Absent'}
                         </span>
                       </td>
                       <td style={{ padding: '14px', color: '#475569' }}>
-                        {emp.login_time ? formatTime(emp.login_time) : '—'}
+                        {emp.login_time ? (
+                          formatTime(emp.login_time)
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '12.5px' }}>Not Logged In</span>
+                        )}
                       </td>
                       <td style={{ padding: '14px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1371,7 +1313,7 @@ export default function AdminDashboard() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
             <div>
-              <h1 style={{ margin: 0, fontSize: '22px' }}>👥 Users & Roles Management (Screen 12)</h1>
+              <h1 style={{ margin: 0, fontSize: '22px' }}>👥 Users & Roles Management</h1>
               <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: '13px' }}>Manage employee accounts, roles, and departmental permissions</p>
             </div>
             <button onClick={() => setShowUserModal(true)} style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
@@ -1672,18 +1614,24 @@ export default function AdminDashboard() {
       {/* ================= MODAL: EMPLOYEE LIVE TELEMETRY & PROFILE ================= */}
       {selectedEmp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', padding: '30px', borderRadius: '16px', width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+          <div style={{ background: '#fff', padding: '28px', borderRadius: '16px', width: '100%', maxWidth: '780px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h2 style={{ margin: 0, color: '#0f172a', fontSize: '20px' }}>Staff Live Telemetry & Activity</h2>
+              <div>
+                <h2 style={{ margin: 0, color: '#0f172a', fontSize: '20px', fontWeight: 700 }}>Staff Live Telemetry & Activity</h2>
+                <small style={{ color: '#64748b', fontSize: '12px' }}>
+                  {isToday ? 'Real-time employee activity stream and task progression' : `Historical activity audit log for ${selectedDate}`}
+                </small>
+              </div>
               <button 
                 onClick={() => { setSelectedEmp(null); setEmpDetails(null); }} 
                 style={{ background: '#f1f5f9', border: 'none', width: 32, height: 32, borderRadius: '50%', fontSize: 16, cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Close"
               >
                 ✕
               </button>
             </div>
 
-            {loadingDetails ? (
+            {loadingDetails && !empDetails ? (
               <div style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* Skeleton Header */}
                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
@@ -1710,53 +1658,74 @@ export default function AdminDashboard() {
                 {/* Profile header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0', marginBottom: '20px' }}>
                   <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                    <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700 }}>
+                    <div style={{ width: 54, height: 54, borderRadius: '50%', background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700 }}>
                       {empDetails.profile?.name?.[0]?.toUpperCase() || 'E'}
                     </div>
                     <div>
                       <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>{empDetails.profile?.name}</h3>
-                      <p style={{ margin: '2px 0 0', color: '#64748b', fontSize: 13 }}>{empDetails.profile?.email} • {empDetails.profile?.module || 'Employee'}</p>
+                      <p style={{ margin: '2px 0 0', color: '#64748b', fontSize: 13 }}>
+                        {empDetails.profile?.email} • <span style={{ fontWeight: 600, color: '#334155' }}>{empDetails.profile?.module || 'General'} Workspace</span>
+                      </p>
                     </div>
                   </div>
                   <span style={{ 
-                    padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-                    background: empDetails.profile?.session_status === 'Working' ? '#dcfce7' : empDetails.profile?.session_status === 'Break' ? '#fef3c7' : '#fee2e2',
-                    color: empDetails.profile?.session_status === 'Working' ? '#15803d' : empDetails.profile?.session_status === 'Break' ? '#b45309' : '#b91c1c'
+                    padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700,
+                    background: empDetails.profile?.session_status === 'Working' ? '#dcfce7' : empDetails.profile?.session_status === 'Break' ? '#fef3c7' : empDetails.profile?.session_status === 'LoggedOut' ? '#fee2e2' : '#f1f5f9',
+                    color: empDetails.profile?.session_status === 'Working' ? '#15803d' : empDetails.profile?.session_status === 'Break' ? '#b45309' : empDetails.profile?.session_status === 'LoggedOut' ? '#b91c1c' : '#64748b'
                   }}>
-                    ● {empDetails.profile?.session_status || 'Logged Out'}
+                    ● {empDetails.profile?.session_status === 'Working' ? 'Working' : empDetails.profile?.session_status === 'Break' ? 'On Break' : empDetails.profile?.session_status === 'LoggedOut' ? 'Logged Out' : 'Not Logged In'}
                   </span>
                 </div>
 
                 {/* Quick Metrics */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
                   <div style={{ background: '#f8fafc', padding: 14, borderRadius: 10, border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: 12, color: '#64748b', display: 'block' }}>Login Time</span>
-                    <strong style={{ fontSize: 16, color: '#0f172a' }}>{empDetails.profile?.login_time ? formatTime(empDetails.profile.login_time) : '—'}</strong>
+                    <span style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 2 }}>Login Time</span>
+                    <strong style={{ fontSize: 16, color: empDetails.profile?.login_time ? '#0f172a' : '#94a3b8' }}>
+                      {empDetails.profile?.login_time ? formatTime(empDetails.profile.login_time) : 'Not Logged In'}
+                    </strong>
                   </div>
                   <div style={{ background: '#f8fafc', padding: 14, borderRadius: 10, border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: 12, color: '#64748b', display: 'block' }}>Working Time</span>
+                    <span style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 2 }}>Active Working Time</span>
                     <strong style={{ fontSize: 16, color: '#2563eb' }}>{Math.floor((empDetails.profile?.working_minutes || 0) / 60)}h {(empDetails.profile?.working_minutes || 0) % 60}m</strong>
                   </div>
                   <div style={{ background: '#f8fafc', padding: 14, borderRadius: 10, border: '1px solid #e2e8f0' }}>
-                    <span style={{ fontSize: 12, color: '#64748b', display: 'block' }}>Break Time</span>
+                    <span style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 2 }}>Break Duration</span>
                     <strong style={{ fontSize: 16, color: '#d97706' }}>{empDetails.profile?.break_minutes || 0}m</strong>
                   </div>
                 </div>
 
                 {/* Tasks & Activity Timeline */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                  {/* Left Column: Tasks */}
                   <div>
-                    <h4 style={{ margin: '0 0 10px', fontSize: 14, color: '#0f172a' }}>Recent Assigned Tasks</h4>
-                    <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <h4 style={{ margin: 0, fontSize: 14, color: '#0f172a', fontWeight: 700 }}>
+                        {isToday ? 'Recent Assigned Tasks' : `Tasks Activity (${selectedDate})`}
+                      </h4>
+                      <span style={{ fontSize: 12, color: '#64748b' }}>({empDetails.tasks?.length || 0})</span>
+                    </div>
+                    <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 4 }}>
                       {(!empDetails.tasks || empDetails.tasks.length === 0) ? (
-                        <p style={{ fontSize: 13, color: '#94a3b8' }}>No tasks assigned</p>
+                        <div style={{ padding: 24, textAlign: 'center', background: '#f8fafc', borderRadius: 8, color: '#94a3b8', fontSize: 13 }}>
+                          {isToday ? 'No tasks assigned' : `No tasks recorded for ${selectedDate}`}
+                        </div>
                       ) : (
                         empDetails.tasks.map(t => (
                           <div key={t.id} style={{ padding: 10, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }}>
                             <div style={{ fontWeight: 600, color: '#1e293b' }}>{t.title}</div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: '#64748b' }}>
-                              <span>Priority: {t.priority}</span>
-                              <span style={{ color: t.status === 'Completed' ? '#16a34a' : t.status === 'In Progress' ? '#2563eb' : '#d97706', fontWeight: 600 }}>{t.status}</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, color: '#64748b' }}>
+                              <span style={{ fontSize: 11, background: '#e2e8f0', padding: '1px 6px', borderRadius: 4 }}>Priority: {t.priority}</span>
+                              <span style={{ 
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: 12,
+                                background: t.status === 'Completed' ? '#dcfce7' : t.status === 'In Progress' ? '#dbeafe' : '#f1f5f9',
+                                color: t.status === 'Completed' ? '#16a34a' : t.status === 'In Progress' ? '#2563eb' : '#64748b'
+                              }}>
+                                {t.status}
+                              </span>
                             </div>
                           </div>
                         ))
@@ -1764,18 +1733,64 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
+                  {/* Right Column: Today's Activity Log */}
                   <div>
-                    <h4 style={{ margin: '0 0 10px', fontSize: 14, color: '#0f172a' }}>Today's Activity Log</h4>
-                    <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(!empDetails.timeline || empDetails.timeline.length === 0) ? (
-                        <p style={{ fontSize: 13, color: '#94a3b8' }}>No activity logged yet today</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <h4 style={{ margin: 0, fontSize: 14, color: '#0f172a', fontWeight: 700 }}>
+                        {isToday ? "Today's Activity Log" : `Activity Log (${selectedDate})`}
+                      </h4>
+                      {isToday ? (
+                        <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>● Real-time</span>
                       ) : (
-                        empDetails.timeline.map((item, idx) => (
-                          <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 12 }}>
-                            <span style={{ color: '#2563eb', fontWeight: 700, minWidth: 65 }}>{formatTime(item.time)}</span>
-                            <span style={{ color: '#334155' }}>{item.text}</span>
-                          </div>
-                        ))
+                        <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>📅 {selectedDate}</span>
+                      )}
+                    </div>
+                    <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
+                      {(!empDetails.timeline || empDetails.timeline.length === 0) ? (
+                        <div style={{ padding: 24, textAlign: 'center', background: '#f8fafc', borderRadius: 8, color: '#94a3b8', fontSize: 13 }}>
+                          {isToday ? 'No activity logged yet today' : `No activity logged on ${selectedDate}`}
+                        </div>
+                      ) : (
+                        empDetails.timeline.map((item, idx) => {
+                          let badgeBg = '#f1f5f9';
+                          let badgeColor = '#475569';
+                          let badgeLabel = item.type;
+
+                          if (item.type === 'break') {
+                            badgeBg = '#fef3c7'; badgeColor = '#b45309'; badgeLabel = 'Break';
+                          } else if (item.type === 'break_end') {
+                            badgeBg = '#dcfce7'; badgeColor = '#15803d'; badgeLabel = 'Resumed';
+                          } else if (item.type === 'task_start' || item.status === 'In Progress') {
+                            badgeBg = '#dbeafe'; badgeColor = '#1d4ed8'; badgeLabel = 'Task Start';
+                          } else if (item.type === 'task_complete' || item.status === 'Completed') {
+                            badgeBg = '#dcfce7'; badgeColor = '#16a34a'; badgeLabel = 'Task Done';
+                          } else if (item.type === 'login') {
+                            badgeBg = '#ede9fe'; badgeColor = '#6d28d9'; badgeLabel = 'Login';
+                          } else if (item.type === 'logout') {
+                            badgeBg = '#fee2e2'; badgeColor = '#b91c1c'; badgeLabel = 'Logout';
+                          } else if (item.type === 'report') {
+                            badgeBg = '#e0f2fe'; badgeColor = '#0369a1'; badgeLabel = 'Report';
+                          }
+
+                          return (
+                            <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 12, paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
+                              <span style={{ color: '#2563eb', fontWeight: 700, minWidth: 64, whiteSpace: 'nowrap' }}>
+                                {formatTime(item.time)}
+                              </span>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                                  <span style={{ fontSize: 10, fontWeight: 700, background: badgeBg, color: badgeColor, padding: '1px 6px', borderRadius: 4, textTransform: 'uppercase' }}>
+                                    {badgeLabel}
+                                  </span>
+                                  <span style={{ color: '#1e293b', fontWeight: 600 }}>{item.text}</span>
+                                </div>
+                                {item.note && (
+                                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{item.note}</div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </div>

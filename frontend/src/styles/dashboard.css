@@ -13,6 +13,7 @@ body {
 .dashboard-layout {
   display: flex;
   min-height: 100vh;
+  background: #0f172a;
 }
 
 /* SIDEBAR */
@@ -22,10 +23,13 @@ body {
   color: #fff;
   display: flex;
   flex-direction: column;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  bottom: 0;
   height: 100vh;
   z-index: 100;
+  overflow: hidden;
 }
 
 .dash-sidebar-header {
@@ -97,9 +101,13 @@ body {
 /* MAIN AREA */
 .dash-main {
   flex: 1;
+  margin-left: 250px;
+  width: calc(100% - 250px);
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  background: #f1f5f9;
 }
 
 /* TOPBAR */

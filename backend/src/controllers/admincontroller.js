@@ -40,6 +40,8 @@ async function ensureWfhTable() {
 // 1. GET all employees with real-time status and current tasks (Screen 9)
 exports.getLiveEmployees = async (req, res) => {
   try {
+    const targetDate = req.query.date || new Date().toISOString().split('T')[0];
+
     const [rows] = await pool.query(`
       SELECT 
         u.id, 
@@ -50,31 +52,31 @@ exports.getLiveEmployees = async (req, res) => {
         s.id AS session_id, 
         s.login_time, 
         s.logout_time, 
-        s.status AS session_status, 
-        COALESCE(s.break_minutes, 0) AS break_minutes, 
+        IF(s.id IS NULL, 'Not Logged In', s.status) AS session_status, 
+        IF(s.login_time IS NULL, 0, (COALESCE(s.break_minutes, 0) + IFNULL((SELECT TIMESTAMPDIFF(MINUTE, b.start_time, NOW()) FROM breaks b WHERE b.session_id = s.id AND b.end_time IS NULL AND DATE(b.start_time) = ? ORDER BY b.id DESC LIMIT 1), 0))) AS break_minutes, 
         COALESCE(s.total_minutes, 0) AS total_minutes, 
-        TIMESTAMPDIFF(MINUTE, s.login_time, IFNULL(s.logout_time, NOW())) AS working_minutes,
+        IF(s.login_time IS NULL, 0, GREATEST(0, TIMESTAMPDIFF(MINUTE, s.login_time, IFNULL(s.logout_time, IF(? = CURDATE(), NOW(), s.login_time))) - (COALESCE(s.break_minutes, 0) + IFNULL((SELECT TIMESTAMPDIFF(MINUTE, b.start_time, NOW()) FROM breaks b WHERE b.session_id = s.id AND b.end_time IS NULL AND DATE(b.start_time) = ? ORDER BY b.id DESC LIMIT 1), 0)))) AS working_minutes,
         (
           SELECT t.title 
           FROM tasks t 
           WHERE t.assigned_to = u.id 
-          ORDER BY (t.status = 'In Progress') DESC, t.id DESC 
+          ORDER BY (t.status = 'In Progress') DESC, (DATE(t.created_at) = ?) DESC, t.id DESC 
           LIMIT 1
         ) AS current_task,
         (
           SELECT COUNT(*) 
           FROM tasks t 
-          WHERE t.assigned_to = u.id AND t.status = 'Completed' AND DATE(t.completed_at) = CURDATE()
+          WHERE t.assigned_to = u.id AND t.status = 'Completed' AND DATE(t.completed_at) = ?
         ) AS tasks_done,
         (
           SELECT COUNT(*) 
           FROM tasks t 
-          WHERE t.assigned_to = u.id AND DATE(t.created_at) = CURDATE()
+          WHERE t.assigned_to = u.id AND DATE(t.created_at) = ?
         ) AS tasks_total,
         (
-          SELECT COALESCE(tu.created_at, s.login_time) 
+          SELECT tu.created_at 
           FROM task_updates tu 
-          WHERE tu.user_id = u.id 
+          WHERE tu.user_id = u.id AND DATE(tu.created_at) = ?
           ORDER BY tu.id DESC 
           LIMIT 1
         ) AS last_activity_time
@@ -82,13 +84,29 @@ exports.getLiveEmployees = async (req, res) => {
       LEFT JOIN sessions s ON s.id = (
         SELECT MAX(s2.id) 
         FROM sessions s2 
-        WHERE s2.user_id = u.id AND DATE(s2.login_time) = CURDATE() AND s2.status != 'LoggedOut'
+        WHERE s2.user_id = u.id AND DATE(s2.login_time) = ?
       )
       WHERE u.role = 'Employee'
-      ORDER BY (s.status = 'Working') DESC, (s.status = 'Break') DESC, u.name ASC
-    `);
+      ORDER BY (s.status = 'Working') DESC, (s.status = 'Break') DESC, (s.login_time IS NOT NULL) DESC, u.name ASC
+    `, [targetDate, targetDate, targetDate, targetDate, targetDate, targetDate, targetDate, targetDate]);
 
-    res.json(rows);
+    // Ensure strict nulls and zeros if employee did not log in on selected date
+    const cleanedRows = rows.map(emp => {
+      if (!emp.session_id || !emp.login_time) {
+        return {
+          ...emp,
+          session_id: null,
+          login_time: null,
+          logout_time: null,
+          session_status: 'Not Logged In',
+          working_minutes: 0,
+          break_minutes: 0
+        };
+      }
+      return emp;
+    });
+
+    res.json(cleanedRows);
   } catch (err) {
     console.error('Live employees error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -99,47 +117,159 @@ exports.getLiveEmployees = async (req, res) => {
 exports.getEmployeeDetailedProfile = async (req, res) => {
   try {
     const empId = req.params.id;
+    const targetDate = req.query.date || new Date().toISOString().split('T')[0];
 
-    // 🔥 Promise.all se teeno queries ek saath (parallel) chalengi. Speed double ho jayegi.
+    // Parallel execution for profile, tasks, and comprehensive activity timeline for targetDate
     const [userInfoResult, tasksResult, timelineResult] = await Promise.all([
-      // 1. Profile
+      // 1. Profile with session strictly on targetDate
       pool.query(`
-        SELECT u.id, u.name, u.email, u.role, u.module, 
-               s.login_time, s.logout_time, s.status AS session_status, s.break_minutes,
-               TIMESTAMPDIFF(MINUTE, s.login_time, IFNULL(s.logout_time, NOW())) AS working_minutes
+        SELECT u.id, u.name, u.email, u.role, 
+               COALESCE(s.module, u.module) AS module, 
+               s.id AS session_id,
+               s.login_time, s.logout_time, 
+               IF(s.id IS NULL, 'Not Logged In', COALESCE(s.status, 'Not Logged In')) AS session_status, 
+               IF(s.login_time IS NULL, 0, (COALESCE(s.break_minutes, 0) + IFNULL((SELECT TIMESTAMPDIFF(MINUTE, b.start_time, NOW()) FROM breaks b WHERE b.session_id = s.id AND b.end_time IS NULL AND DATE(b.start_time) = ? ORDER BY b.id DESC LIMIT 1), 0))) AS break_minutes,
+               IF(s.login_time IS NULL, 0, GREATEST(0, TIMESTAMPDIFF(MINUTE, s.login_time, IFNULL(s.logout_time, IF(? = CURDATE(), NOW(), s.login_time))) - (COALESCE(s.break_minutes, 0) + IFNULL((SELECT TIMESTAMPDIFF(MINUTE, b.start_time, NOW()) FROM breaks b WHERE b.session_id = s.id AND b.end_time IS NULL AND DATE(b.start_time) = ? ORDER BY b.id DESC LIMIT 1), 0)))) AS working_minutes
         FROM users u
-        LEFT JOIN sessions s ON u.id = s.user_id AND DATE(s.login_time) = CURDATE()
+        LEFT JOIN sessions s ON s.id = (
+          SELECT MAX(s2.id) 
+          FROM sessions s2 
+          WHERE s2.user_id = u.id AND DATE(s2.login_time) = ?
+        )
         WHERE u.id = ?
-      `, [empId]),
+      `, [targetDate, targetDate, targetDate, targetDate, empId]),
       
-      // 2. Tasks (LIMIT 20 lagaya hai taaki 500 purane tasks load na hon)
+      // 2. Tasks: Tasks active, updated or created on targetDate (or current tasks if targetDate is today)
       pool.query(`
-        SELECT id, title, description, priority, status, created_at, completed_at 
+        SELECT id, title, description, priority, status, created_at, started_at, completed_at, remarks 
         FROM tasks 
         WHERE assigned_to = ? 
-        ORDER BY created_at DESC LIMIT 20
-      `, [empId]),
+          AND (DATE(created_at) = ? OR DATE(started_at) = ? OR DATE(completed_at) = ? OR ? = CURDATE())
+        ORDER BY (status = 'In Progress') DESC, (status = 'Assigned') DESC, created_at DESC 
+        LIMIT 20
+      `, [empId, targetDate, targetDate, targetDate, targetDate]),
       
-      // 3. Timeline
+      // 3. Full Timeline for targetDate (Logins, Breaks, Task Starts, Completions, Updates, Reports)
       pool.query(`
-        SELECT 'login' AS type, login_time AS time, 'Logged into system' AS text 
-        FROM sessions WHERE user_id = ? AND DATE(login_time) = CURDATE()
+        SELECT 'login' AS type, s.login_time AS time, 
+               CONCAT('Logged into workspace (', COALESCE(s.module, 'General'), ')') AS text, 
+               'Active' AS status, 
+               'Session started' AS note
+        FROM sessions s 
+        WHERE s.user_id = ? AND DATE(s.login_time) = ?
+
         UNION ALL
-        SELECT 'task' AS type, tu.created_at AS time, CONCAT('Task Update: ', t.title, ' marked as ', tu.new_status) AS text
+
+        SELECT 'logout' AS type, s.logout_time AS time, 
+               'Logged out from workspace' AS text, 
+               'Logged Out' AS status, 
+               CONCAT('Session ended - Active: ', GREATEST(0, TIMESTAMPDIFF(MINUTE, s.login_time, s.logout_time) - COALESCE(s.break_minutes, 0)), ' min') AS note
+        FROM sessions s 
+        WHERE s.user_id = ? AND s.logout_time IS NOT NULL AND DATE(s.logout_time) = ?
+
+        UNION ALL
+
+        SELECT 'break' AS type, b.start_time AS time, 
+               'Took official break' AS text, 
+               'Break' AS status, 
+               'Work paused for break' AS note
+        FROM breaks b 
+        JOIN sessions s ON b.session_id = s.id 
+        WHERE s.user_id = ? AND DATE(b.start_time) = ?
+
+        UNION ALL
+
+        SELECT 'break_end' AS type, b.end_time AS time, 
+               CONCAT('Resumed work (Break: ', IFNULL(b.duration_minutes, 0), ' min)') AS text, 
+               'Working' AS status, 
+               CONCAT('Break completed in ', IFNULL(b.duration_minutes, 0), ' minutes') AS note
+        FROM breaks b 
+        JOIN sessions s ON b.session_id = s.id 
+        WHERE s.user_id = ? AND b.end_time IS NOT NULL AND DATE(b.end_time) = ?
+
+        UNION ALL
+
+        SELECT 'task_update' AS type, tu.created_at AS time, 
+               CASE 
+                 WHEN tu.new_status = 'In Progress' THEN CONCAT('Started task: "', t.title, '"')
+                 WHEN tu.new_status = 'Completed' THEN CONCAT('Completed task: "', t.title, '"')
+                 WHEN tu.new_status = 'Assigned' THEN CONCAT('Assigned task: "', t.title, '"')
+                 ELSE CONCAT('Task update: "', t.title, '" -> ', tu.new_status)
+               END AS text, 
+               tu.new_status AS status, 
+               COALESCE(tu.note, t.remarks, 'Task status updated') AS note
         FROM task_updates tu
         JOIN tasks t ON tu.task_id = t.id
-        WHERE tu.user_id = ? AND DATE(tu.created_at) = CURDATE()
+        WHERE tu.user_id = ? AND DATE(tu.created_at) = ?
+
+        UNION ALL
+
+        SELECT 'task_start' AS type, t.started_at AS time, 
+               CONCAT('Started task: "', t.title, '"') AS text, 
+               'In Progress' AS status, 
+               COALESCE(t.remarks, 'Work started on task') AS note
+        FROM tasks t
+        WHERE t.assigned_to = ? 
+          AND t.started_at IS NOT NULL 
+          AND DATE(t.started_at) = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM task_updates tu 
+            WHERE tu.task_id = t.id AND tu.new_status = 'In Progress' AND DATE(tu.created_at) = ?
+          )
+
+        UNION ALL
+
+        SELECT 'task_complete' AS type, t.completed_at AS time, 
+               CONCAT('Completed task: "', t.title, '"') AS text, 
+               'Completed' AS status, 
+               COALESCE(t.remarks, 'Task completed successfully') AS note
+        FROM tasks t
+        WHERE t.assigned_to = ? 
+          AND t.completed_at IS NOT NULL 
+          AND DATE(t.completed_at) = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM task_updates tu 
+            WHERE tu.task_id = t.id AND tu.new_status = 'Completed' AND DATE(tu.created_at) = ?
+          )
+
+        UNION ALL
+
+        SELECT 'report' AS type, dr.created_at AS time, 
+               CONCAT('Submitted Daily Work Report: ', SUBSTRING(dr.summary, 1, 50), IF(LENGTH(dr.summary) > 50, '...', '')) AS text, 
+               'Report' AS status, 
+               dr.summary AS note
+        FROM daily_reports dr
+        WHERE dr.user_id = ? AND DATE(dr.created_at) = ?
+
         ORDER BY time DESC
-      `, [empId, empId])
+      `, [
+        empId, targetDate, 
+        empId, targetDate, 
+        empId, targetDate, 
+        empId, targetDate, 
+        empId, targetDate, 
+        empId, targetDate, targetDate, 
+        empId, targetDate, targetDate, 
+        empId, targetDate
+      ])
     ]);
 
+    let profileData = userInfoResult[0][0] || null;
+    if (profileData && (!profileData.session_id || !profileData.login_time)) {
+      profileData.session_status = 'Not Logged In';
+      profileData.login_time = null;
+      profileData.logout_time = null;
+      profileData.working_minutes = 0;
+      profileData.break_minutes = 0;
+    }
+
     res.json({
-      profile: userInfoResult[0][0] || null,
+      profile: profileData,
       tasks: tasksResult[0] || [],
       timeline: timelineResult[0] || []
     });
   } catch (err) {
-    console.error(err);
+    console.error('getEmployeeDetailedProfile error:', err);
     res.status(500).json({ message: 'Server error while fetching employee details' });
   }
 };
@@ -147,19 +277,45 @@ exports.getEmployeeDetailedProfile = async (req, res) => {
 // 2. GET summary cards for admin dashboard
 exports.getDashboardStats = async (req, res) => {
   try {
-    const [working] = await pool.query(`SELECT COUNT(DISTINCT user_id) AS c FROM sessions WHERE status = 'Working' AND logout_time IS NULL AND DATE(login_time) = CURDATE()`);
-    const [onBreak] = await pool.query(`SELECT COUNT(DISTINCT user_id) AS c FROM sessions WHERE status = 'Break' AND logout_time IS NULL AND DATE(login_time) = CURDATE()`);
-    const [totalEmployees] = await pool.query(`SELECT COUNT(*) AS c FROM users WHERE role = 'Employee' AND status = 'Active'`);
-    const loggedOutCount = Math.max(0, totalEmployees[0].c - (working[0].c + onBreak[0].c));
-    const [tasksCompleted] = await pool.query(`SELECT COUNT(*) AS c FROM tasks WHERE status = 'Completed' AND DATE(completed_at) = CURDATE()`);
+    const targetDate = req.query.date || new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+    const isToday = targetDate === today;
 
-    res.json({
-      working: working[0].c,
-      onBreak: onBreak[0].c,
-      loggedOut: loggedOutCount,
-      totalEmployees: totalEmployees[0].c,
-      tasksCompletedToday: tasksCompleted[0]?.c || 0
-    });
+    const [totalEmployees] = await pool.query(`SELECT COUNT(*) AS c FROM users WHERE role = 'Employee' AND status = 'Active'`);
+    const totalCount = totalEmployees[0]?.c || 0;
+
+    if (isToday) {
+      const [working] = await pool.query(`SELECT COUNT(DISTINCT user_id) AS c FROM sessions WHERE status = 'Working' AND logout_time IS NULL AND DATE(login_time) = CURDATE()`);
+      const [onBreak] = await pool.query(`SELECT COUNT(DISTINCT user_id) AS c FROM sessions WHERE status = 'Break' AND logout_time IS NULL AND DATE(login_time) = CURDATE()`);
+      const loggedOutCount = Math.max(0, totalCount - (working[0].c + onBreak[0].c));
+      const [tasksCompleted] = await pool.query(`SELECT COUNT(*) AS c FROM tasks WHERE status = 'Completed' AND DATE(completed_at) = CURDATE()`);
+
+      res.json({
+        working: working[0]?.c || 0,
+        onBreak: onBreak[0]?.c || 0,
+        loggedOut: loggedOutCount,
+        totalEmployees: totalCount,
+        tasksCompletedToday: tasksCompleted[0]?.c || 0,
+        isToday: true,
+        date: targetDate
+      });
+    } else {
+      // Historical date stats
+      const [attended] = await pool.query(`SELECT COUNT(DISTINCT user_id) AS c FROM sessions WHERE DATE(login_time) = ?`, [targetDate]);
+      const [tookBreak] = await pool.query(`SELECT COUNT(DISTINCT s.user_id) AS c FROM breaks b JOIN sessions s ON b.session_id = s.id WHERE DATE(b.start_time) = ?`, [targetDate]);
+      const absentCount = Math.max(0, totalCount - (attended[0]?.c || 0));
+      const [tasksCompleted] = await pool.query(`SELECT COUNT(*) AS c FROM tasks WHERE status = 'Completed' AND DATE(completed_at) = ?`, [targetDate]);
+
+      res.json({
+        working: attended[0]?.c || 0,
+        onBreak: tookBreak[0]?.c || 0,
+        loggedOut: absentCount,
+        totalEmployees: totalCount,
+        tasksCompletedToday: tasksCompleted[0]?.c || 0,
+        isToday: false,
+        date: targetDate
+      });
+    }
   } catch (err) {
     console.error('getDashboardStats error:', err);
     res.status(500).json({ message: 'Server error' });
