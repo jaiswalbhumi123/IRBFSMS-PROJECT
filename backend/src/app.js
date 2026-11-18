@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 const path = require('path');
 require('dotenv').config();
 
@@ -14,12 +16,31 @@ const clientRoutes = require('./routes/clientroutes');
 const leadRoutes = require('./routes/leadroutes');
 const financialRoutes = require('./routes/financialroutes');
 const documentRoutes = require('./routes/documentroutes');
+const ratelimit = require('express-rate-limit');
 
 const app = express();
 
 app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// 1. General Rate Limiter (Saari APIs ke liye)
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Ek IP se 15 minute mein maximum 100 requests
+  message: { message: 'Too many requests from this IP, please try again after 15 minutes' },
+  standardHeaders: true, 
+  legacyHeaders: false, 
+});
+
+// 2. Strict Login Limiter (Login hack rokne ke liye)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Ek IP se 15 minute mein maximum 5 login attempts
+  message: { message: 'Too many login attempts. Please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Serve static uploaded files (PDFs, Resumes, KYC, Contracts)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -28,6 +49,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.get('/', (req, res) => res.json({ message: 'Benefit BBS API is running' }));
 
 // API Routes
+app.use('/api/auth/login',loginLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/employee', employeeRoutes);
