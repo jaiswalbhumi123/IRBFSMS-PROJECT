@@ -131,6 +131,28 @@ async function setup() {
       console.log('✅ Seeded demo tasks');
     }
 
+    // 8. Create customers table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS customers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        phone VARCHAR(50),
+        city VARCHAR(100),
+        status ENUM('Active', 'Inactive') DEFAULT 'Active',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ customers table ready');
+
+    try {
+      await pool.query('ALTER TABLE loan_applications ADD COLUMN customer_id INT NULL');
+    } catch (e) { /* Column already exists */ }
+    try {
+      await pool.query('ALTER TABLE credit_card_applications ADD COLUMN customer_id INT NULL');
+    } catch (e) { /* Column already exists */ }
+
     console.log('🎉 Database setup complete!');
     process.exit(0);
   } catch (err) {

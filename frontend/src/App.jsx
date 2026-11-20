@@ -8,8 +8,16 @@ import RecruitmentDashboard from './pages/employee/RecruitmentDashboard';
 import CrmDashboard from './pages/employee/CrmDashboard';
 import FinancialDashboard from './pages/employee/FinancialDashboard';
 import ProtectedRoute from './routes/protectedroute';
+import CustomerProtectedRoute from './routes/CustomerProtectedRoute';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import CandidateProfile from './pages/employee/candidateprofile';
+
+// Public Customer Portal Pages
+import CustomerLogin from './pages/public/CustomerLogin';
+import CustomerRegister from './pages/public/CustomerRegister';
+import CustomerDashboard from './pages/public/CustomerDashboard';
+import ApplyForm from './pages/public/ApplyForm';
+import TrackStatus from './pages/public/TrackStatus';
 
 export default function App() {
   return (
@@ -18,8 +26,23 @@ export default function App() {
         {/* Default route */}
         <Route path="/" element={<Navigate to="/login" replace />} />
         
-        {/* Authentication */}
+        {/* Staff Authentication */}
         <Route path="/login" element={<Login />} />
+
+        {/* Customer Portal Routes (Public & Customer-Protected) */}
+        <Route path="/customer/login" element={<CustomerLogin />} />
+        <Route path="/customer/register" element={<CustomerRegister />} />
+        <Route path="/customer/track" element={<TrackStatus />} />
+        <Route path="/customer/dashboard" element={
+          <CustomerProtectedRoute>
+            <CustomerDashboard />
+          </CustomerProtectedRoute>
+        } />
+        <Route path="/customer/apply" element={
+          <CustomerProtectedRoute>
+            <ApplyForm />
+          </CustomerProtectedRoute>
+        } />
         
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={

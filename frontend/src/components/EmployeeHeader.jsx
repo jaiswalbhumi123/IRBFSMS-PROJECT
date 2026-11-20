@@ -277,34 +277,92 @@ export default function EmployeeHeader({
           </div>
 
           {/* GLOBAL SEARCH BAR */}
-          <div className="topbar-global-search" ref={searchDropdownRef} style={{ position: 'relative', width: 340 }}>
-            <div style={{ position: 'relative' }}>
+          <div className="topbar-global-search" ref={searchDropdownRef} style={{ position: 'relative', width: 360 }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <svg
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  pointerEvents: 'none',
+                  color: '#64748b'
+                }}
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
               <input
                 type="text"
-                placeholder="🔍 Search candidates, jobs..."
+                placeholder={
+                  user?.module === 'Financial'
+                    ? 'Search loans, credit cards...'
+                    : user?.module === 'IT'
+                    ? 'Search tasks, activities...'
+                    : user?.module === 'Business'
+                    ? 'Search clients, leads...'
+                    : 'Search candidates, jobs...'
+                }
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setShowSearchDropdown(true);
                 }}
-                onFocus={() => setShowSearchDropdown(true)}
+                onFocus={(e) => {
+                  setShowSearchDropdown(true);
+                  e.target.style.background = '#ffffff';
+                  e.target.style.borderColor = '#2563eb';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.background = '#f8fafc';
+                  e.target.style.borderColor = '#cbd5e1';
+                  e.target.style.boxShadow = 'none';
+                }}
                 style={{
                   width: '100%',
-                  padding: '7px 28px 7px 32px',
-                  background: '#ffffff',
-                  border: '1.5px solid #cbd5e1',
+                  padding: '8px 32px 8px 36px',
+                  background: '#f8fafc',
+                  border: '1px solid #cbd5e1',
                   borderRadius: 8,
                   fontSize: 13,
                   outline: 'none',
-                  color: '#0f172a'
+                  color: '#0f172a',
+                  transition: 'all 0.2s ease',
+                  boxSizing: 'border-box'
                 }}
               />
-              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: '#94a3b8' }}>🔍</span>
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => { setSearchQuery(''); setShowSearchDropdown(false); }}
-                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8', fontSize: 13 }}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    border: 'none',
+                    background: '#e2e8f0',
+                    borderRadius: '50%',
+                    width: 18,
+                    height: 18,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    fontSize: 11,
+                    lineHeight: 1
+                  }}
+                  title="Clear search"
                 >
                   ✕
                 </button>

@@ -16,7 +16,7 @@ const clientRoutes = require('./routes/clientroutes');
 const leadRoutes = require('./routes/leadroutes');
 const financialRoutes = require('./routes/financialroutes');
 const documentRoutes = require('./routes/documentroutes');
-const ratelimit = require('express-rate-limit');
+const customerRoutes = require('./routes/customerRoutes'); // 👈 Sirf ek baar
 
 const app = express();
 
@@ -24,32 +24,33 @@ app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// 1. General Rate Limiter (Saari APIs ke liye)
+
+// 1. General Rate Limiter
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Ek IP se 15 minute mein maximum 100 requests
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { message: 'Too many requests from this IP, please try again after 15 minutes' },
   standardHeaders: true, 
   legacyHeaders: false, 
 });
 
-// 2. Strict Login Limiter (Login hack rokne ke liye)
+// 2. Strict Login Limiter
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Ek IP se 15 minute mein maximum 5 login attempts
+  windowMs: 15 * 60 * 1000,
+  max: 5,
   message: { message: 'Too many login attempts. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Serve static uploaded files (PDFs, Resumes, KYC, Contracts)
+// Serve static uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Health check
 app.get('/', (req, res) => res.json({ message: 'Benefit BBS API is running' }));
 
 // API Routes
-app.use('/api/auth/login',loginLimiter);
+app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/employee', employeeRoutes);
@@ -61,6 +62,7 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/financial', financialRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/customer', customerRoutes); 
 
 // 404 Catch-all handler
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }));

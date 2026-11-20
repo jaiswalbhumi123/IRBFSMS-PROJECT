@@ -753,13 +753,39 @@ export default function CrmDashboard() {
 
               {/* Lead Search & Filter Toolbar */}
               <div style={{ display: 'flex', gap: 12, margin: '16px 0', background: '#fff', padding: '12px 16px', borderRadius: 10, border: '1px solid #e2e8f0', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  placeholder="🔍 Search leads by title, service, or remarks..."
-                  value={leadSearch}
-                  onChange={(e) => setLeadSearch(e.target.value)}
-                  style={{ flex: 1, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
-                />
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <svg
+                    style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748b' }}
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search leads by title, service, or remarks..."
+                    value={leadSearch}
+                    onChange={(e) => setLeadSearch(e.target.value)}
+                    style={{ width: '100%', padding: '8px 30px 8px 36px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, outline: 'none', background: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
+                  />
+                  {leadSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLeadSearch('')}
+                      style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: '#e2e8f0', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b', fontSize: 11 }}
+                      title="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
                 <select value={leadSourceFilter} onChange={(e) => setLeadSourceFilter(e.target.value)} style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}>
                   <option value="ALL">All Sources</option>
                   <option value="Website">Website</option>
@@ -892,13 +918,39 @@ export default function CrmDashboard() {
 
               {/* Search & Filter Toolbar */}
               <div style={{ display: 'flex', gap: 12, margin: '16px 0', background: '#fff', padding: '12px 16px', borderRadius: 10, border: '1px solid #e2e8f0', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  placeholder="🔍 Search clients by company, contact person, email, or phone..."
-                  value={clientSearch}
-                  onChange={(e) => setClientSearch(e.target.value)}
-                  style={{ flex: 1, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
-                />
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <svg
+                    style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#64748b' }}
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search clients by company, contact person, email, or phone..."
+                    value={clientSearch}
+                    onChange={(e) => setClientSearch(e.target.value)}
+                    style={{ width: '100%', padding: '8px 30px 8px 36px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, outline: 'none', background: '#f8fafc', color: '#0f172a', boxSizing: 'border-box' }}
+                  />
+                  {clientSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setClientSearch('')}
+                      style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: '#e2e8f0', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b', fontSize: 11 }}
+                      title="Clear search"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
                 <select value={clientStatusFilter} onChange={(e) => setClientStatusFilter(e.target.value)} style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}>
                   <option value="ALL">All Status</option>
                   <option value="Active">Active</option>
