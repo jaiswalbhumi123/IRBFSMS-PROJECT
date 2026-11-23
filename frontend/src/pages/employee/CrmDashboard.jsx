@@ -535,36 +535,39 @@ export default function CrmDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(tasks && tasks.length > 0 ? tasks.slice(0, 5) : [
-                        { id: 't1', title: 'Call 5 new leads from website', assigned_by_name: 'Admin', due_time: '12:00 PM', priority: 'High', status: 'In Progress' },
-                        { id: 't2', title: 'Follow up regarding ERP demo', assigned_by_name: 'Admin', due_time: '02:30 PM', priority: 'High', status: 'Assigned' },
-                        { id: 't3', title: 'Send contract agreement to Apex Ltd', assigned_by_name: 'Admin', due_time: '04:00 PM', priority: 'Medium', status: 'Completed' },
-                        { id: 't4', title: 'Schedule product walkthrough call', assigned_by_name: 'Manager', due_time: '05:00 PM', priority: 'Medium', status: 'Assigned' }
-                      ]).map(t => (
-                        <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                          <td style={{ padding: '12px 10px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{t.title}</td>
-                          <td style={{ padding: '12px 10px', fontSize: '12.5px', color: '#475569' }}>{t.assigned_by_name || 'Admin'}</td>
-                          <td style={{ padding: '12px 10px', fontSize: '12px', color: '#475569' }}>{t.due_time || '05:00 PM'}</td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <span className={'priority-badge ' + (t.priority || 'medium').toLowerCase()}>
-                              {t.priority || 'Medium'}
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <span
-                              className={'task-status-badge ' + (t.status || 'assigned').toLowerCase().replace(' ', '-')}
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => {
-                                if (t.status === 'Assigned') handleTaskAction(t.id, 'In Progress');
-                                else if (t.status === 'In Progress') handleTaskAction(t.id, 'Completed');
-                              }}
-                              title={t.status === 'In Progress' ? 'Click to complete' : t.status === 'Assigned' ? 'Click to start' : 'Completed'}
-                            >
-                              {t.status}
-                            </span>
+                      {tasks && tasks.length > 0 ? (
+                        tasks.slice(0, 5).map(t => (
+                          <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                            <td style={{ padding: '12px 10px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{t.title}</td>
+                            <td style={{ padding: '12px 10px', fontSize: '12.5px', color: '#475569' }}>{t.assigned_by_name || 'Admin'}</td>
+                            <td style={{ padding: '12px 10px', fontSize: '12px', color: '#475569' }}>{t.due_time || (t.due_at ? new Date(t.due_at).toLocaleDateString('en-IN') : '05:00 PM')}</td>
+                            <td style={{ padding: '12px 10px' }}>
+                              <span className={'priority-badge ' + (t.priority || 'medium').toLowerCase()}>
+                                {t.priority || 'Medium'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 10px' }}>
+                              <span
+                                className={'task-status-badge ' + (t.status || 'assigned').toLowerCase().replace(' ', '-')}
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => {
+                                  if (t.status === 'Assigned') handleTaskAction(t.id, 'In Progress');
+                                  else if (t.status === 'In Progress') handleTaskAction(t.id, 'Completed');
+                                }}
+                                title={t.status === 'In Progress' ? 'Click to complete' : t.status === 'Assigned' ? 'Click to start' : 'Completed'}
+                              >
+                                {t.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '13.5px' }}>
+                            ☕ No CRM tasks assigned yet for today. When admin assigns a task, it will appear here in real-time.
                           </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>

@@ -34,8 +34,8 @@ exports.login = async (req, res) => {
     }
 
     const [sessionResult] = await pool.query(
-      'INSERT INTO sessions (user_id, login_time, status) VALUES (?, NOW(), "Working")',
-      [user.id]
+      'INSERT INTO sessions (user_id, login_time, status, module) VALUES (?, NOW(), "Working", ?)',
+      [user.id, user.module || null]
     );
 
     const token = jwt.sign(

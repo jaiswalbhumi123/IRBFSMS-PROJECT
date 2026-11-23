@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { broadcastEvent } = require('../utils/realtime');
 
 // 1. Admin naya task assign karega
 exports.createTask = async (req, res) => {
@@ -21,6 +22,13 @@ exports.createTask = async (req, res) => {
       'INSERT INTO task_updates (task_id, user_id, old_status, new_status, note) VALUES (?, ?, ?, ?, ?)',
       [result.insertId, assigned_to, null, 'Assigned', 'Task assigned by Admin']
     );
+
+    try {
+      broadcastEvent('TASK_CREATED', { taskId: result.insertId, assigned_to, module, title });
+      broadcastEvent('TASK_UPDATED', { taskId: result.insertId, status: 'Assigned' });
+    } catch (e) {
+      console.warn('Realtime broadcast warning:', e.message);
+    }
 
     res.status(201).json({ message: 'Task assigned successfully', taskId: result.insertId });
   } catch (err) {

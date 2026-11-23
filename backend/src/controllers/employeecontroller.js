@@ -46,7 +46,7 @@ exports.getDashboardData = async (req, res) => {
       sessionId: session ? session.id : null,
       status: session ? session.status : 'Working',
       loginTime: session ? session.login_time : new Date(),
-      module: session ? session.module : req.user.module,
+      module: (session && session.module) || req.user.module || 'Recruitment',
       breakMinutes: session ? session.break_minutes : 0,
       workingMinutes: 0
     };

@@ -12,6 +12,11 @@ export default function FinancialDashboard() {
 
   // FILTER & LOGS
   const [taskFilter, setTaskFilter] = useState('ALL');
+  const [viewTask, setViewTask] = useState(null);
+  const [taskPage, setTaskPage] = useState(1);
+  const [completeTaskModal, setCompleteTaskModal] = useState(null);
+  const [taskRemarks, setTaskRemarks] = useState('');
+  const tasksPerPage = 6;
   const [workLogs, setWorkLogs] = useState([]);
 
   // REAL DATA STATES
@@ -102,11 +107,15 @@ export default function FinancialDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleTaskAction = async (taskId, newStatus) => {
+  const handleTaskAction = async (taskId, newStatus, remarks = null) => {
     try {
-      await api.put(`/employee/tasks/${taskId}/status`, { status: newStatus });
+      await api.put(`/employee/tasks/${taskId}/status`, { status: newStatus, remarks });
       fetchData();
-    } catch (err) { console.error(err); }
+      toast.success(`Task marked as ${newStatus}`);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update task status');
+    }
   };
 
   const handleCreateLoan = async (e) => {
@@ -209,6 +218,16 @@ export default function FinancialDashboard() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading Financial Dashboard...</div>;
 
   const { user, session, stats, tasks = [] } = data || {};
+
+  const filteredTasks = (tasks || []).filter(t => {
+    if (taskFilter === 'ALL') return true;
+    return t.status === taskFilter;
+  });
+
+  const totalTaskPages = Math.ceil(filteredTasks.length / tasksPerPage);
+  const indexOfLastTask = taskPage * tasksPerPage;
+  const indexOfFirstTask = indexOfLastTask - tasksPerPage;
+  const currentTasks = filteredTasks.slice(indexOfFirstTask, indexOfLastTask);
 
   const filteredLoans = (typeFilter === 'CARDS' ? [] : loans)
     .filter(l => (statusFilter === 'ALL' || l.status === statusFilter))
@@ -344,36 +363,45 @@ export default function FinancialDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {(tasks && tasks.length > 0 ? tasks.slice(0, 5) : [
-                        { id: 't1', title: 'Verify income docs for Rajesh Kumar', assigned_by_name: 'Admin', due_time: '12:30 PM', priority: 'High', status: 'In Progress' },
-                        { id: 't2', title: 'Follow up on business loan application', assigned_by_name: 'Admin', due_time: '02:00 PM', priority: 'High', status: 'Assigned' },
-                        { id: 't3', title: 'Upload PAN & Aadhaar for Platinum card', assigned_by_name: 'Manager', due_time: '03:45 PM', priority: 'Medium', status: 'Completed' },
-                        { id: 't4', title: 'Review credit eligibility parameters', assigned_by_name: 'Admin', due_time: '05:00 PM', priority: 'Low', status: 'Assigned' }
-                      ]).map(t => (
-                        <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                          <td style={{ padding: '12px 10px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>{t.title}</td>
-                          <td style={{ padding: '12px 10px', fontSize: '12.5px', color: '#475569' }}>{t.assigned_by_name || 'Admin'}</td>
-                          <td style={{ padding: '12px 10px', fontSize: '12px', color: '#475569' }}>{t.due_time || '05:00 PM'}</td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <span className={'priority-badge ' + (t.priority || 'medium').toLowerCase()}>
-                              {t.priority || 'Medium'}
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <span
-                              className={'task-status-badge ' + (t.status || 'assigned').toLowerCase().replace(' ', '-')}
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => {
-                                if (t.status === 'Assigned') handleTaskAction(t.id, 'In Progress');
-                                else if (t.status === 'In Progress') handleTaskAction(t.id, 'Completed');
-                              }}
-                              title={t.status === 'In Progress' ? 'Click to complete' : t.status === 'Assigned' ? 'Click to start' : 'Completed'}
+                      {tasks && tasks.length > 0 ? (
+                        tasks.slice(0, 5).map(t => (
+                          <tr key={t.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                            <td
+                              style={{ padding: '12px 10px', fontSize: '13px', fontWeight: 700, color: '#7c3aed', cursor: 'pointer', textDecoration: 'underline' }}
+                              onClick={() => setViewTask(t)}
+                              title="Click to view task details"
                             >
-                              {t.status}
-                            </span>
+                              {t.title}
+                            </td>
+                            <td style={{ padding: '12px 10px', fontSize: '12.5px', color: '#475569' }}>{t.assigned_by_name || 'Admin'}</td>
+                            <td style={{ padding: '12px 10px', fontSize: '12px', color: '#475569' }}>{t.due_time || (t.due_at ? new Date(t.due_at).toLocaleDateString('en-IN') : '05:00 PM')}</td>
+                            <td style={{ padding: '12px 10px' }}>
+                              <span className={'priority-badge ' + (t.priority || 'medium').toLowerCase()}>
+                                {t.priority || 'Medium'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 10px' }}>
+                              <span
+                                className={'task-status-badge ' + (t.status || 'assigned').toLowerCase().replace(' ', '-')}
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => {
+                                  if (t.status === 'Assigned') handleTaskAction(t.id, 'In Progress');
+                                  else if (t.status === 'In Progress') setCompleteTaskModal(t);
+                                }}
+                                title={t.status === 'In Progress' ? 'Click to complete' : t.status === 'Assigned' ? 'Click to start' : 'Completed'}
+                              >
+                                {t.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', fontSize: '13.5px' }}>
+                            ☕ No tasks assigned yet for today. When admin assigns a task, it will appear here in real-time.
                           </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -537,6 +565,124 @@ export default function FinancialDashboard() {
                 </div>
               </div>
 
+            </div>
+          )}
+
+          {/* ================= VIEW: TASKS DEDICATED PAGE ================= */}
+          {activeTab === 'tasks' && (
+            <div>
+              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h1 style={{ margin: 0 }}>📋 Financial Tasks Management</h1>
+                  <p style={{ margin: 0, color: '#64748b' }}>Manage loan verification, credit underwriting, and KYC tasks assigned by Admin</p>
+                </div>
+                <div style={{ display: 'flex', gap: 8, background: '#e2e8f0', padding: 4, borderRadius: 8 }}>
+                  {['ALL', 'In Progress', 'Assigned', 'Completed'].map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => { setTaskFilter(tab); setTaskPage(1); }}
+                      style={{
+                        padding: '6px 14px', border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                        background: taskFilter === tab ? '#7c3aed' : 'transparent',
+                        color: taskFilter === tab ? '#ffffff' : '#475569'
+                      }}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="panel-title"><span>Tasks List ({filteredTasks.length})</span></div>
+                {filteredTasks.length === 0 ? (
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No tasks found in "{taskFilter}"</p>
+                ) : (
+                  <table className="dash-table">
+                    <thead>
+                      <tr>
+                        <th>Task Name & Specifications</th>
+                        <th>Assigned By</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {currentTasks.map(t => (
+                        <tr key={t.id}>
+                          <td>
+                            <strong
+                              onClick={() => setViewTask(t)}
+                              style={{ fontSize: 14, color: '#7c3aed', cursor: 'pointer', textDecoration: 'underline' }}
+                              title="Click to view task details"
+                            >
+                              {t.title}
+                            </strong>
+                            <div style={{ fontSize: 12, color: '#64748b', marginTop: 3 }}>{t.description || 'No description provided'}</div>
+                          </td>
+                          <td>{t.assigned_by_name || 'Admin'}</td>
+                          <td><span className={`priority-badge ${(t.priority || 'medium').toLowerCase()}`}>{t.priority}</span></td>
+                          <td><span className={`task-status-badge ${t.status.toLowerCase().replace(' ', '-')}`}>{t.status}</span></td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <button
+                                onClick={() => setViewTask(t)}
+                                style={{ padding: '5px 10px', background: '#faf5ff', color: '#6b21a8', border: '1px solid #e9d5ff', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                View
+                              </button>
+                              {t.status === 'Assigned' && (
+                                <button onClick={() => handleTaskAction(t.id, 'In Progress')} className="btn-action-task start">Start</button>
+                              )}
+                              {t.status === 'In Progress' && (
+                                <button onClick={() => setCompleteTaskModal(t)} className="btn-action-task complete">Complete</button>
+                              )}
+                              {t.status === 'Completed' && <span style={{ color: '#16a34a', fontWeight: 700 }}>✓ Done</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* TASKS PAGINATION CONTROLS */}
+                {filteredTasks.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 14, borderTop: '1px solid #e2e8f0', flexWrap: 'gap', gap: 10 }}>
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>
+                      Showing <strong>{indexOfFirstTask + 1}</strong> to <strong>{Math.min(indexOfLastTask, filteredTasks.length)}</strong> of <strong>{filteredTasks.length}</strong> tasks
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setTaskPage(prev => Math.max(prev - 1, 1))}
+                        disabled={taskPage === 1}
+                        style={{ padding: '5px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: taskPage === 1 ? '#f8fafc' : '#fff', color: taskPage === 1 ? '#94a3b8' : '#334155', cursor: taskPage === 1 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+                      >
+                        ← Prev
+                      </button>
+
+                      {Array.from({ length: totalTaskPages }, (_, i) => i + 1).map(page => (
+                        <button
+                          key={page}
+                          onClick={() => setTaskPage(page)}
+                          style={{ padding: '5px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', background: taskPage === page ? '#7c3aed' : '#fff', color: taskPage === page ? '#fff' : '#334155', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
+                        >
+                          {page}
+                        </button>
+                      ))}
+
+                      <button
+                        onClick={() => setTaskPage(prev => Math.min(prev + 1, totalTaskPages))}
+                        disabled={taskPage === totalTaskPages || totalTaskPages === 0}
+                        style={{ padding: '5px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: taskPage === totalTaskPages || totalTaskPages === 0 ? '#f8fafc' : '#fff', color: taskPage === totalTaskPages || totalTaskPages === 0 ? '#94a3b8' : '#334155', cursor: taskPage === totalTaskPages || totalTaskPages === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1184,6 +1330,137 @@ export default function FinancialDashboard() {
                 style={{ padding: '10px 22px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
               >
                 Close Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= VIEW TASK DETAILS MODAL ================= */}
+      {viewTask && (
+        <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '600px', width: '92%', borderRadius: '14px', padding: '28px', background: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px', marginBottom: '18px' }}>
+              <div>
+                <span className={`task-status-badge ${viewTask.status.toLowerCase().replace(' ', '-')}`}>
+                  {viewTask.status}
+                </span>
+                <span className={`priority-badge ${(viewTask.priority || 'medium').toLowerCase()}`} style={{ marginLeft: 8 }}>
+                  {viewTask.priority || 'Medium'} Priority
+                </span>
+                <h2 style={{ margin: '10px 0 0', fontSize: '18px', color: '#0f172a' }}>{viewTask.title}</h2>
+              </div>
+              <button
+                onClick={() => setViewTask(null)}
+                style={{ background: 'transparent', border: 'none', fontSize: '22px', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '18px' }}>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>ASSIGNED BY</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600', color: '#334155', fontSize: '14px' }}>{viewTask.assigned_by_name || 'Admin'}</p>
+              </div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>DUE DATE</label>
+                <p style={{ margin: '4px 0 0', fontWeight: '600', color: '#334155', fontSize: '14px' }}>
+                  {viewTask.due_at ? new Date(viewTask.due_at).toLocaleDateString('en-IN') : 'Today, 05:00 PM'}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+              <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>TASK SPECIFICATIONS / INSTRUCTIONS</label>
+              <p style={{ margin: '8px 0 0', fontSize: '13.5px', color: '#334155', lineHeight: 1.5 }}>
+                {viewTask.description || 'No detailed instructions provided. Please follow standard operational guidelines.'}
+              </p>
+            </div>
+
+            {viewTask.remarks && (
+              <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>REMARKS / PROCESS NOTES</label>
+                <p style={{ margin: '6px 0 0', fontSize: '13.5px', color: '#334155' }}>{viewTask.remarks}</p>
+              </div>
+            )}
+
+            <div style={{ marginTop: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                {viewTask.status === 'Assigned' && (
+                  <button
+                    onClick={() => {
+                      handleTaskAction(viewTask.id, 'In Progress');
+                      setViewTask(null);
+                    }}
+                    style={{ padding: '9px 18px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', fontSize: '13px' }}
+                  >
+                    Start Task
+                  </button>
+                )}
+                {viewTask.status === 'In Progress' && (
+                  <button
+                    onClick={() => {
+                      const t = viewTask;
+                      setViewTask(null);
+                      setCompleteTaskModal(t);
+                    }}
+                    style={{ padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', fontSize: '13px' }}
+                  >
+                    Complete Task
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewTask(null)}
+                style={{ padding: '9px 20px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 'bold', color: '#334155', cursor: 'pointer', fontSize: '13px' }}
+              >
+                Close Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= COMPLETE TASK WITH REMARKS MODAL ================= */}
+      {completeTaskModal && (
+        <div className="modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '520px', width: '92%', borderRadius: '14px', padding: '26px', background: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ margin: '0 0 6px', color: '#0f172a', fontSize: '18px' }}>Complete Task</h3>
+            <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '13px' }}>
+              Add completion remarks or verification findings for: <strong>{completeTaskModal.title}</strong>
+            </p>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                Completion Remarks / Output Notes
+              </label>
+              <textarea
+                value={taskRemarks}
+                onChange={e => setTaskRemarks(e.target.value)}
+                placeholder="e.g. Verified PAN Card, Aadhaar, and 6-month salary slips. Applicant meets eligibility criteria."
+                rows="4"
+                style={{ width: '100%', padding: '12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '13.5px', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => { setCompleteTaskModal(null); setTaskRemarks(''); }}
+                style={{ padding: '9px 18px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#475569', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleTaskAction(completeTaskModal.id, 'Completed', taskRemarks);
+                  setCompleteTaskModal(null);
+                  setTaskRemarks('');
+                }}
+                style={{ padding: '9px 20px', background: '#16a34a', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '13px' }}
+              >
+                ✓ Confirm Completion
               </button>
             </div>
           </div>
