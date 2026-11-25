@@ -194,6 +194,23 @@ exports.getDashboardData = async (req, res) => {
 
     timeline.sort((a, b) => new Date(a.time) - new Date(b.time));
 
+    // Active or latest WFH request for this employee
+    const [wfhRows] = await pool.query(
+      `SELECT * FROM wfh_requests 
+       WHERE user_id = ? 
+       ORDER BY (status = 'Pending') DESC, (status = 'Approved' AND DATE(end_date) >= CURDATE()) DESC, id DESC 
+       LIMIT 1`,
+      [userId]
+    );
+    const wfh = wfhRows[0] || null;
+    let isWfhToday = false;
+    if (wfh && wfh.status === 'Approved') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const startStr = new Date(wfh.start_date).toISOString().split('T')[0];
+      const endStr = new Date(wfh.end_date).toISOString().split('T')[0];
+      isWfhToday = todayStr >= startStr && todayStr <= endStr;
+    }
+
     res.json({
       user: {
         id: req.user.id,
@@ -210,7 +227,17 @@ exports.getDashboardData = async (req, res) => {
         overdue
       },
       tasks,
-      timeline
+      timeline,
+      wfh: wfh ? {
+        id: wfh.id,
+        status: wfh.status,
+        start_date: wfh.start_date,
+        end_date: wfh.end_date,
+        days_count: wfh.days_count,
+        reason: wfh.reason,
+        admin_remarks: wfh.admin_remarks,
+        is_wfh_today: Boolean(isWfhToday)
+      } : null
     });
   } catch (err) {
     console.error('getDashboardData error:', err);
@@ -393,23 +420,38 @@ exports.getWorkLog = async (req, res) => {
 exports.getMyWfhStatus = async (req, res) => {
   try {
     const userId = req.user.id;
-    // Aaj ki date YYYY-MM-DD format mein nikalte hain
-    const today = new Date().toISOString().split('T')[0];
 
-    // Check: Aaj ki date, WFH ke start aur end date ke BEECh mein honi chahiye
-    const [wfh] = await pool.query(`
-      SELECT * FROM wfh_requests 
-      WHERE user_id = ? 
-      AND status = 'Approved' 
-      AND ? >= start_date 
-      AND ? <= end_date
-    `, [userId, today, today]);
+    // Check for latest WFH request for this employee:
+    // Prioritize: 1. Pending (needs attention) 2. Approved (current/future) 3. Latest reviewed request
+    const [wfhRows] = await pool.query(
+      `SELECT * FROM wfh_requests 
+       WHERE user_id = ? 
+       ORDER BY (status = 'Pending') DESC, (status = 'Approved' AND DATE(end_date) >= CURDATE()) DESC, id DESC 
+       LIMIT 1`,
+      [userId]
+    );
+
+    const wfh = wfhRows[0] || null;
+    let isWfhToday = false;
+    if (wfh && wfh.status === 'Approved') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const startStr = new Date(wfh.start_date).toISOString().split('T')[0];
+      const endStr = new Date(wfh.end_date).toISOString().split('T')[0];
+      isWfhToday = todayStr >= startStr && todayStr <= endStr;
+    }
 
     res.json({
-      is_wfh_today: wfh.length > 0,
-      details: wfh[0] || null
+      status: wfh ? wfh.status : null,
+      is_wfh_today: isWfhToday,
+      details: wfh,
+      start_date: wfh ? wfh.start_date : null,
+      end_date: wfh ? wfh.end_date : null,
+      days_count: wfh ? wfh.days_count : 0,
+      reason: wfh ? wfh.reason : null,
+      admin_remarks: wfh ? wfh.admin_remarks : null
     });
   } catch (err) {
+    console.error('getMyWfhStatus error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -427,6 +469,13 @@ exports.applyWfh = async (req, res) => {
       `INSERT INTO wfh_requests (user_id, start_date, end_date, days_count, reason, status) VALUES (?, ?, ?, ?, ?, 'Pending')`,
       [userId, start_date, end_date, days, reason]
     );
+
+    try {
+      broadcastEvent('WFH_APPLIED', { id: result.insertId, userId, start_date, end_date, days, reason });
+    } catch (e) {
+      console.warn('Realtime broadcast warning:', e.message);
+    }
+
     res.status(201).json({ message: 'WFH application submitted to Admin', id: result.insertId });
   } catch (err) {
     console.error('applyWfh error:', err);

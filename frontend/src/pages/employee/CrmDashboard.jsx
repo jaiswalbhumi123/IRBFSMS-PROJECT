@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import EmployeeHeader from '../../components/EmployeeHeader';
+import DailyReportModal from '../../components/DailyReportModal';
 import '../../styles/dashboard.css';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { toast } from 'react-toastify';
 
 export default function CrmDashboard() {
+  const navigate = useNavigate();
   // ACTIVE VIEW TAB: 'dashboard' | 'leads' | 'clients' | 'followups' | 'tasks' | 'worklog'
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showDailyReportModal, setShowDailyReportModal] = useState(false);
   const [followUpFilter, setFollowUpFilter] = useState('pending'); // 'pending' | 'upcoming' | 'completed'
 
   const [data, setData] = useState(null);
@@ -328,7 +332,7 @@ export default function CrmDashboard() {
     );
   }
 
-  const { user, session, stats, tasks = [], timeline = [] } = data || {};
+  const { user, session, stats, tasks = [], timeline = [], wfh = null } = data || {};
 
   // Safe Arrays
   const safeLeads = leads || [];
@@ -454,6 +458,12 @@ export default function CrmDashboard() {
           >
             ⏱️ Work Log
           </a>
+          <a
+            className={activeTab === 'daily-report' ? 'active' : ''}
+            onClick={() => setShowDailyReportModal(true)}
+          >
+            📝 Daily Report
+          </a>
         </nav>
       </aside>
 
@@ -468,9 +478,97 @@ export default function CrmDashboard() {
           departmentSubtitle="Business & CRM Solutions team"
           showGreeting={activeTab === 'dashboard'}
           onBreakChange={() => fetchDashboard()}
+          onLogoutClick={() => setShowDailyReportModal(true)}
         />
 
         <div className="dash-content" style={{ paddingTop: activeTab === 'dashboard' ? '18px' : '30px' }}>
+
+          {/* WFH STATUS BANNER */}
+          {wfh && wfh.status === 'Approved' && (
+            <div style={{
+              background: '#f0fdf4',
+              border: '1px solid #86efac',
+              borderRadius: '10px',
+              padding: '14px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxShadow: '0 2px 6px rgba(22,101,52,0.06)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '26px' }}>🏠</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <strong style={{ color: '#166534', fontSize: '14px' }}>Work From Home Approved</strong>
+                    <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
+                      Active {wfh.days_count ? `(${wfh.days_count} Days)` : ''}
+                    </span>
+                  </div>
+                  <p style={{ margin: '3px 0 0', color: '#15803d', fontSize: '13px' }}>
+                    Dates: <strong>{new Date(wfh.start_date).toLocaleDateString('en-IN')}</strong> to <strong>{new Date(wfh.end_date).toLocaleDateString('en-IN')}</strong>
+                    {wfh.admin_remarks ? ` • Note from Admin: "${wfh.admin_remarks}"` : ' • Please maintain high productivity and ensure all daily deliverables are submitted.'}
+                  </p>
+                </div>
+              </div>
+              <span style={{ background: '#16a34a', color: '#fff', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>
+                ✓ Authorized
+              </span>
+            </div>
+          )}
+
+          {wfh && wfh.status === 'Pending' && (
+            <div style={{
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: '10px',
+              padding: '14px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxShadow: '0 2px 6px rgba(180,83,9,0.06)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '26px' }}>⏳</span>
+                <div>
+                  <strong style={{ color: '#92400e', fontSize: '14px' }}>WFH Application Under Review</strong>
+                  <p style={{ margin: '3px 0 0', color: '#b45309', fontSize: '13px' }}>
+                    Your request for <strong>{new Date(wfh.start_date).toLocaleDateString('en-IN')}</strong> to <strong>{new Date(wfh.end_date).toLocaleDateString('en-IN')}</strong> is awaiting Admin approval.
+                  </p>
+                </div>
+              </div>
+              <span style={{ background: '#fef3c7', color: '#92400e', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, border: '1px solid #fde68a' }}>
+                Pending Approval
+              </span>
+            </div>
+          )}
+
+          {wfh && wfh.status === 'Rejected' && (
+            <div style={{
+              background: '#fef2f2',
+              border: '1px solid #fca5a5',
+              borderRadius: '10px',
+              padding: '14px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '26px' }}>❌</span>
+                <div>
+                  <strong style={{ color: '#991b1b', fontSize: '14px' }}>WFH Application Not Approved</strong>
+                  <p style={{ margin: '3px 0 0', color: '#b91c1c', fontSize: '13px' }}>
+                    {wfh.admin_remarks ? `Admin Remarks: "${wfh.admin_remarks}"` : 'Please report to the office as per normal working schedule.'}
+                  </p>
+                </div>
+              </div>
+              <span style={{ background: '#fee2e2', color: '#991b1b', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>
+                Rejected
+              </span>
+            </div>
+          )}
 
           {/* ================= VIEW 1: CRM DASHBOARD (CASE STUDY SPEC) ================= */}
           {activeTab === 'dashboard' && (
@@ -1627,6 +1725,15 @@ export default function CrmDashboard() {
           </div>
         </div>
       )}
+
+      {/* MANDATORY DAILY REPORT / LOGOUT MODAL */}
+      <DailyReportModal
+        isOpen={showDailyReportModal}
+        onClose={() => setShowDailyReportModal(false)}
+        session={session}
+        stats={stats}
+        onLogoutSuccess={() => navigate('/login')}
+      />
 
     </div>
   );

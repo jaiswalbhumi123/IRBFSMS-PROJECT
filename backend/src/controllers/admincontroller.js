@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
+const { broadcastEvent } = require('../utils/realtime');
 
 // Helper to ensure WFH requests table exists and has seed data
 async function ensureWfhTable() {
@@ -430,6 +431,16 @@ exports.updateWfhStatus = async (req, res) => {
       `UPDATE wfh_requests SET status = ?, admin_remarks = ?, reviewed_at = NOW() WHERE id = ?`,
       [status, admin_remarks || null, req.params.id]
     );
+
+    try {
+      const [reqRow] = await pool.query('SELECT user_id FROM wfh_requests WHERE id = ?', [req.params.id]);
+      if (reqRow.length > 0) {
+        broadcastEvent('WFH_STATUS_CHANGED', { id: req.params.id, userId: reqRow[0].user_id, status, admin_remarks });
+      }
+    } catch (e) {
+      console.warn('Realtime broadcast warning:', e.message);
+    }
+
     res.json({ message: `WFH request ${status.toLowerCase()} successfully!` });
   } catch (err) {
     console.error('updateWfhStatus error:', err);

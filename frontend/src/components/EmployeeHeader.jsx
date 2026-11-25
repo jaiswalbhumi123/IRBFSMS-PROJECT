@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import DailyReportModal from './DailyReportModal';
@@ -12,9 +12,7 @@ export default function EmployeeHeader({
   moduleBadgeColor = 'blue',
   variant = 'standard',
   departmentSubtitle = 'Recruitment team',
-  showGreeting = false,
-  searchData = { candidates: [], jobs: [] },
-  onSelectSearchItem = null
+  showGreeting = false
 }) {
   const [workingMins, setWorkingMins] = useState(session?.workingMinutes || 0);
   const [breakMins, setBreakMins] = useState(session?.breakMinutes || 0);
@@ -22,11 +20,6 @@ export default function EmployeeHeader({
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [loadingBreak, setLoadingBreak] = useState(false);
   const navigate = useNavigate();
-
-  // Global Search State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const searchDropdownRef = useRef(null);
 
   // WFH State & Handler
   const [wfhStatus, setWfhStatus] = useState(null);
@@ -45,6 +38,8 @@ export default function EmployeeHeader({
 
   useEffect(() => {
     fetchWfhStatus();
+    const interval = setInterval(fetchWfhStatus, 8000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleApplyWfh = async (e) => {
@@ -140,17 +135,6 @@ export default function EmployeeHeader({
     }
   }, [session]);
 
-  // Click outside to close search dropdown
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (searchDropdownRef.current && !searchDropdownRef.current.contains(e.target)) {
-        setShowSearchDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Real-time ticking counter (every 60 seconds)
   useEffect(() => {
     const timer = setInterval(() => {
@@ -208,32 +192,6 @@ export default function EmployeeHeader({
     year: 'numeric'
   });
 
-  // Filter global search results
-  const q = searchQuery.toLowerCase().trim();
-  const matchedCandidates = q ? (searchData.candidates || []).filter(c =>
-    (c.name && c.name.toLowerCase().includes(q)) ||
-    (c.email && c.email.toLowerCase().includes(q)) ||
-    (c.skills && c.skills.toLowerCase().includes(q)) ||
-    (c.job_title && c.job_title.toLowerCase().includes(q))
-  ).slice(0, 5) : [];
-
-  const matchedJobs = q ? (searchData.jobs || []).filter(j =>
-    (j.title && j.title.toLowerCase().includes(q)) ||
-    (j.department && j.department.toLowerCase().includes(q))
-  ).slice(0, 5) : [];
-
-  const handleItemClick = (type, item) => {
-    setSearchQuery('');
-    setShowSearchDropdown(false);
-    if (onSelectSearchItem) {
-      onSelectSearchItem(type, item);
-    } else {
-      if (type === 'candidate') {
-        navigate(`/employee/candidate/${item.id}`);
-      }
-    }
-  };
-
   if (variant === 'case-study') {
     return (
       <>
@@ -248,13 +206,26 @@ export default function EmployeeHeader({
             </span>
 
             {/* WFH STATUS BADGE */}
-            {wfhStatus && wfhStatus.status === 'Approved' ? (
-              <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+            {wfhStatus && (wfhStatus.status === 'Approved' || wfhStatus.details?.status === 'Approved') ? (
+              <span
+                style={{ background: '#dcfce7', color: '#15803d', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'default' }}
+                title={`WFH Approved: ${wfhStatus.start_date ? new Date(wfhStatus.start_date).toLocaleDateString('en-IN') : ''} to ${wfhStatus.end_date ? new Date(wfhStatus.end_date).toLocaleDateString('en-IN') : ''}. ${wfhStatus.admin_remarks ? `Admin Remarks: "${wfhStatus.admin_remarks}"` : ''}`}
+              >
                 🏠 WFH Approved
               </span>
-            ) : wfhStatus && wfhStatus.status === 'Pending' ? (
-              <span style={{ background: '#fef3c7', color: '#b45309', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+            ) : wfhStatus && (wfhStatus.status === 'Pending' || wfhStatus.details?.status === 'Pending') ? (
+              <span
+                style={{ background: '#fef3c7', color: '#b45309', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'default' }}
+                title="WFH application submitted and currently pending Admin review"
+              >
                 ⏳ WFH Pending
+              </span>
+            ) : wfhStatus && (wfhStatus.status === 'Rejected' || wfhStatus.details?.status === 'Rejected') ? (
+              <span
+                style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'default' }}
+                title={wfhStatus.admin_remarks ? `Rejected: ${wfhStatus.admin_remarks}` : 'WFH request was not approved'}
+              >
+                ❌ WFH Rejected
               </span>
             ) : null}
 
@@ -274,198 +245,6 @@ export default function EmployeeHeader({
             >
               🏠 Apply WFH
             </button>
-          </div>
-
-          {/* GLOBAL SEARCH BAR */}
-          <div className="topbar-global-search" ref={searchDropdownRef} style={{ position: 'relative', width: 360 }}>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <svg
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                  color: '#64748b'
-                }}
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                type="text"
-                placeholder={
-                  user?.module === 'Financial'
-                    ? 'Search loans, credit cards...'
-                    : user?.module === 'IT'
-                    ? 'Search tasks, activities...'
-                    : user?.module === 'Business'
-                    ? 'Search clients, leads...'
-                    : 'Search candidates, jobs...'
-                }
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowSearchDropdown(true);
-                }}
-                onFocus={(e) => {
-                  setShowSearchDropdown(true);
-                  e.target.style.background = '#ffffff';
-                  e.target.style.borderColor = '#2563eb';
-                  e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.1)';
-                }}
-                onBlur={(e) => {
-                  e.target.style.background = '#f8fafc';
-                  e.target.style.borderColor = '#cbd5e1';
-                  e.target.style.boxShadow = 'none';
-                }}
-                style={{
-                  width: '100%',
-                  padding: '8px 32px 8px 36px',
-                  background: '#f8fafc',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  outline: 'none',
-                  color: '#0f172a',
-                  transition: 'all 0.2s ease',
-                  boxSizing: 'border-box'
-                }}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(''); setShowSearchDropdown(false); }}
-                  style={{
-                    position: 'absolute',
-                    right: 8,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    border: 'none',
-                    background: '#e2e8f0',
-                    borderRadius: '50%',
-                    width: 18,
-                    height: 18,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    color: '#64748b',
-                    fontSize: 11,
-                    lineHeight: 1
-                  }}
-                  title="Clear search"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* FLOATING AUTOCOMPLETE DROPDOWN */}
-            {showSearchDropdown && searchQuery.trim().length > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  left: 0,
-                  right: 0,
-                  background: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 10,
-                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.12)',
-                  maxHeight: 320,
-                  overflowY: 'auto',
-                  zIndex: 2000,
-                  padding: '8px 0'
-                }}
-              >
-                {matchedCandidates.length === 0 && matchedJobs.length === 0 ? (
-                  <div style={{ padding: '12px 16px', color: '#94a3b8', fontSize: 12.5, textAlign: 'center' }}>
-                    No candidates or jobs matching "{searchQuery}"
-                  </div>
-                ) : (
-                  <>
-                    {/* CANDIDATES MATCHES */}
-                    {matchedCandidates.length > 0 && (
-                      <div>
-                        <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#64748b', background: '#f8fafc', textTransform: 'uppercase' }}>
-                          👤 Candidates ({matchedCandidates.length})
-                        </div>
-                        {matchedCandidates.map(c => (
-                          <div
-                            key={`cand-${c.id}`}
-                            onClick={() => handleItemClick('candidate', c)}
-                            style={{
-                              padding: '8px 14px',
-                              cursor: 'pointer',
-                              borderBottom: '1px solid #f1f5f9',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              transition: 'background 0.15s'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <div>
-                              <strong style={{ fontSize: 13, color: '#0f172a' }}>{c.name}</strong>
-                              <span style={{ fontSize: 11.5, color: '#64748b', marginLeft: 6 }}>({c.job_title || 'Candidate'})</span>
-                              <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.email}</div>
-                            </div>
-                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#e0e7ff', color: '#4338ca', fontWeight: 600 }}>
-                              {c.status}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* JOBS MATCHES */}
-                    {matchedJobs.length > 0 && (
-                      <div>
-                        <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#64748b', background: '#f8fafc', textTransform: 'uppercase' }}>
-                          💼 Job Openings ({matchedJobs.length})
-                        </div>
-                        {matchedJobs.map(j => (
-                          <div
-                            key={`job-${j.id}`}
-                            onClick={() => handleItemClick('job', j)}
-                            style={{
-                              padding: '8px 14px',
-                              cursor: 'pointer',
-                              borderBottom: '1px solid #f1f5f9',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              transition: 'background 0.15s'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <div>
-                              <strong style={{ fontSize: 13, color: '#0f172a' }}>{j.title}</strong>
-                              <span style={{ fontSize: 11.5, color: '#64748b', marginLeft: 6 }}>({j.department})</span>
-                              <div style={{ fontSize: 11, color: '#94a3b8' }}>{j.location} · {j.salary_range}</div>
-                            </div>
-                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: j.status === 'Active' ? '#f0fdf4' : '#fef2f2', color: j.status === 'Active' ? '#15803d' : '#b91c1c', fontWeight: 600 }}>
-                              {j.status}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
           </div>
 
           <div className="topbar-right-user">
@@ -550,13 +329,26 @@ export default function EmployeeHeader({
           </span>
 
           {/* WFH STATUS BADGE */}
-          {wfhStatus && wfhStatus.status === 'Approved' ? (
-            <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+          {wfhStatus && (wfhStatus.status === 'Approved' || wfhStatus.details?.status === 'Approved') ? (
+            <span
+              style={{ background: '#dcfce7', color: '#15803d', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'default' }}
+              title={`WFH Approved: ${wfhStatus.start_date ? new Date(wfhStatus.start_date).toLocaleDateString('en-IN') : ''} to ${wfhStatus.end_date ? new Date(wfhStatus.end_date).toLocaleDateString('en-IN') : ''}. ${wfhStatus.admin_remarks ? `Admin Remarks: "${wfhStatus.admin_remarks}"` : ''}`}
+            >
               🏠 WFH Approved
             </span>
-          ) : wfhStatus && wfhStatus.status === 'Pending' ? (
-            <span style={{ background: '#fef3c7', color: '#b45309', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+          ) : wfhStatus && (wfhStatus.status === 'Pending' || wfhStatus.details?.status === 'Pending') ? (
+            <span
+              style={{ background: '#fef3c7', color: '#b45309', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'default' }}
+              title="WFH application submitted and currently pending Admin review"
+            >
               ⏳ WFH Pending
+            </span>
+          ) : wfhStatus && (wfhStatus.status === 'Rejected' || wfhStatus.details?.status === 'Rejected') ? (
+            <span
+              style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'default' }}
+              title={wfhStatus.admin_remarks ? `Rejected: ${wfhStatus.admin_remarks}` : 'WFH request was not approved'}
+            >
+              ❌ WFH Rejected
             </span>
           ) : null}
 

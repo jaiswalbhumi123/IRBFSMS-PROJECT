@@ -35,24 +35,25 @@ export default function ApplyForm() {
   });
   const [cardFile, setCardFile] = useState(null);
 
-  // Pre-fill from customerUser
+  // Pre-fill from customerUser or staff user
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('customerUser');
-      if (stored) {
-        const u = JSON.parse(stored);
+      const storedCust = localStorage.getItem('customerUser');
+      const storedStaff = localStorage.getItem('user');
+      const u = storedCust ? JSON.parse(storedCust) : (storedStaff ? JSON.parse(storedStaff) : null);
+      if (u) {
         setLoanForm(prev => ({
           ...prev,
-          applicant_name: u.name || '',
-          contact_details: u.phone || '',
-          city: u.city || ''
+          applicant_name: prev.applicant_name || u.name || '',
+          contact_details: prev.contact_details || u.phone || u.contact || '',
+          city: prev.city || u.city || ''
         }));
         setCardForm(prev => ({
           ...prev,
-          applicant_name: u.name || '',
-          mobile_number: u.phone || '',
-          email: u.email || '',
-          city: u.city || ''
+          applicant_name: prev.applicant_name || u.name || '',
+          mobile_number: prev.mobile_number || u.phone || u.contact || '',
+          email: prev.email || u.email || '',
+          city: prev.city || u.city || ''
         }));
       }
     } catch {
@@ -72,15 +73,16 @@ export default function ApplyForm() {
     try {
       const data = new FormData();
       Object.keys(loanForm).forEach(key => {
-        data.append(key, loanForm[key]);
+        if (loanForm[key] !== null && loanForm[key] !== undefined) {
+          data.append(key, loanForm[key]);
+        }
       });
       if (loanFile) {
         data.append('document', loanFile);
       }
 
-      const res = await api.post('/customer/apply-loan', data, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // Do NOT pass manual Content-Type header so Axios generates the boundary correctly
+      const res = await api.post('/customer/apply-loan', data);
 
       if (res.data) {
         setSuccessModal({
@@ -109,15 +111,16 @@ export default function ApplyForm() {
     try {
       const data = new FormData();
       Object.keys(cardForm).forEach(key => {
-        data.append(key, cardForm[key]);
+        if (cardForm[key] !== null && cardForm[key] !== undefined) {
+          data.append(key, cardForm[key]);
+        }
       });
       if (cardFile) {
         data.append('document', cardFile);
       }
 
-      const res = await api.post('/customer/apply-card', data, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // Do NOT pass manual Content-Type header so Axios generates the boundary correctly
+      const res = await api.post('/customer/apply-card', data);
 
       if (res.data) {
         setSuccessModal({
