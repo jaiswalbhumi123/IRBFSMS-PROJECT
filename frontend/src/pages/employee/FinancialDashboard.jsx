@@ -52,12 +52,15 @@ export default function FinancialDashboard() {
   // SEARCH & FILTER
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [enquirySearch, setEnquirySearch] = useState('');
 
   // MODALS
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
   const [viewApp, setViewApp] = useState(null);
+  const [viewCustomerHistory, setViewCustomerHistory] = useState(null);
+  const [customerHistoryList, setCustomerHistoryList] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // PAGINATION
   const [appPage, setAppPage] = useState(1);
@@ -73,6 +76,7 @@ export default function FinancialDashboard() {
     const base = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '');
     return `${base}${path}`;
   };
+  
 
   const fetchData = async () => {
     try {
@@ -151,6 +155,33 @@ export default function FinancialDashboard() {
       fetchData();
       toast.success(`Status updated to ${status}`);
     } catch (err) { toast.error('Failed to update status'); }
+  };
+
+  const handleOpenCustomerHistory = async (item) => {
+    const identifier = item.customer_email || item.email || item.contact_details || item.mobile_number;
+    if (!identifier) {
+      toast.warning('No customer email or contact found for history lookup');
+      return;
+    }
+
+    setViewCustomerHistory({
+      identifier,
+      name: item.applicant_name || item.displayTitle || 'Customer',
+      email: item.customer_email || item.email || '',
+      contact: item.contact_details || item.mobile_number || ''
+    });
+    setLoadingHistory(true);
+    setCustomerHistoryList([]);
+
+    try {
+      const res = await api.get(`/financial/customer-history/${encodeURIComponent(identifier)}`);
+      setCustomerHistoryList(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to fetch customer history:', err);
+      toast.error(err.response?.data?.message || 'Failed to load customer application history');
+    } finally {
+      setLoadingHistory(false);
+    }
   };
 
   const openUploadForApp = (type, id) => {
@@ -233,9 +264,9 @@ export default function FinancialDashboard() {
   const indexOfFirstTask = indexOfLastTask - tasksPerPage;
   const currentTasks = filteredTasks.slice(indexOfFirstTask, indexOfLastTask);
 
-  const filteredLoans = (typeFilter === 'CARDS' ? [] : loans)
+  const filteredLoans = loans
     .filter(l => (statusFilter === 'ALL' || l.status === statusFilter))
-    .filter(l => !searchQuery || l.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || l.contact_details?.toLowerCase().includes(searchQuery.toLowerCase()) || l.city?.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(l => !searchQuery || l.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || l.contact_details?.toLowerCase().includes(searchQuery.toLowerCase()) || l.city?.toLowerCase().includes(searchQuery.toLowerCase()) || l.loan_type?.toLowerCase().includes(searchQuery.toLowerCase()))
     .map(l => ({
       ...l,
       appType: 'Loan',
@@ -248,26 +279,26 @@ export default function FinancialDashboard() {
       typeIcon: '🏦'
     }));
 
-  const filteredCards = (typeFilter === 'LOANS' ? [] : cards)
+  const filteredCards = cards
     .filter(c => (statusFilter === 'ALL' || c.status === statusFilter))
-    .filter(c => !searchQuery || c.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || c.mobile_number?.toLowerCase().includes(searchQuery.toLowerCase()) || c.city?.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(c => !searchQuery || c.applicant_name?.toLowerCase().includes(searchQuery.toLowerCase()) || c.mobile_number?.toLowerCase().includes(searchQuery.toLowerCase()) || c.email?.toLowerCase().includes(searchQuery.toLowerCase()) || c.city?.toLowerCase().includes(searchQuery.toLowerCase()) || c.required_product?.toLowerCase().includes(searchQuery.toLowerCase()))
     .map(c => ({
       ...c,
       appType: 'CreditCard',
       displayTitle: c.applicant_name,
       displaySub: c.mobile_number,
       displayType: c.required_product,
-      displayAmount: `₹${parseFloat(c.monthly_income || 0).toLocaleString('en-IN')} (Income)`,
+      displayAmount: `₹${parseFloat(c.monthly_income || 0).toLocaleString('en-IN')}`,
       typeBadgeBg: '#f3e8ff',
       typeBadgeColor: '#7e22ce',
       typeIcon: '💳'
     }));
 
-  const allApplications = [...filteredLoans, ...filteredCards];
-  const totalAppPages = Math.ceil(allApplications.length / appsPerPage);
+  const activeList = activeTab === 'cards' ? filteredCards : filteredLoans;
+  const totalAppPages = Math.ceil(activeList.length / appsPerPage);
   const indexOfLastApp = appPage * appsPerPage;
   const indexOfFirstApp = indexOfLastApp - appsPerPage;
-  const currentApps = allApplications.slice(indexOfFirstApp, indexOfLastApp);
+  const currentApps = activeList.slice(indexOfFirstApp, indexOfLastApp);
 
   return (
     <div className="dashboard-layout">
@@ -285,7 +316,8 @@ export default function FinancialDashboard() {
           <a className={activeTab === 'daily-report' ? 'active' : ''} onClick={() => setShowDailyReportModal(true)}>📝 Daily Report</a>
           
           <p className="nav-section-title">FINANCIAL SERVICES</p>
-          <a className={activeTab === 'applications' ? 'active' : ''} onClick={() => setActiveTab('applications')}>💳 Loan & Credit Apps</a>
+          <a className={activeTab === 'loans' ? 'active' : ''} onClick={() => { setActiveTab('loans'); setAppPage(1); setSearchQuery(''); setStatusFilter('ALL'); }}>🏦 Loan Applications ({loans.length})</a>
+          <a className={activeTab === 'cards' ? 'active' : ''} onClick={() => { setActiveTab('cards'); setAppPage(1); setSearchQuery(''); setStatusFilter('ALL'); }}>💳 Credit Cards ({cards.length})</a>
           <a className={activeTab === 'enquiries' ? 'active' : ''} onClick={() => setActiveTab('enquiries')}>📄 Customer Enquiries</a>
           <a className={activeTab === 'documents' ? 'active' : ''} onClick={() => setActiveTab('documents')}>📁 KYC Documents ({documentsList.length})</a>
         </nav>
@@ -418,15 +450,15 @@ export default function FinancialDashboard() {
 
               {/* ROW 2: 5 FINANCIAL DOMAIN KPI CARDS */}
               <div className="cards-row-kpi-5">
-                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#2563eb', cursor: 'pointer' }}>
+                <div className="cs-kpi-card" onClick={() => { setActiveTab('loans'); setAppPage(1); }} style={{ borderLeftColor: '#2563eb', cursor: 'pointer' }}>
                   <h2>{statsData?.kpi?.totalEnquiries ?? statsData.totalEnquiries ?? 0}</h2>
                   <p>Total Applications</p>
                 </div>
-                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#6366f1', cursor: 'pointer' }}>
+                <div className="cs-kpi-card" onClick={() => { setActiveTab('loans'); setAppPage(1); }} style={{ borderLeftColor: '#6366f1', cursor: 'pointer' }}>
                   <h2>{statsData?.kpi?.underProcess ?? statsData.underProcess ?? 0}</h2>
                   <p>In Verification</p>
                 </div>
-                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#10b981', cursor: 'pointer' }}>
+                <div className="cs-kpi-card" onClick={() => { setActiveTab('loans'); setAppPage(1); }} style={{ borderLeftColor: '#10b981', cursor: 'pointer' }}>
                   <h2>{statsData?.kpi?.approved ?? statsData.approved ?? 0}</h2>
                   <p>Approved Files</p>
                 </div>
@@ -434,9 +466,9 @@ export default function FinancialDashboard() {
                   <h2>{statsData?.kpi?.docsPending ?? statsData.docsPending ?? 0}</h2>
                   <p>Pending KYC Docs</p>
                 </div>
-                <div className="cs-kpi-card" onClick={() => setActiveTab('applications')} style={{ borderLeftColor: '#8b5cf6', cursor: 'pointer' }}>
-                  <h2>{statsData?.kpi?.totalLoans ?? statsData.totalLoans ?? 0}</h2>
-                  <p>Loan Portfolio</p>
+                <div className="cs-kpi-card" onClick={() => { setActiveTab('cards'); setAppPage(1); }} style={{ borderLeftColor: '#8b5cf6', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.totalCards ?? statsData.totalCards ?? cards.length}</h2>
+                  <p>Credit Cards</p>
                 </div>
               </div>
 
@@ -779,17 +811,50 @@ export default function FinancialDashboard() {
             </div>
           )}
 
-          {/* APPLICATIONS VIEW (COMBINED LOANS & CARDS) */}
-          {activeTab === 'applications' && (
+          {/* SEPARATED LOANS & CREDIT CARDS VIEWS */}
+          {(activeTab === 'loans' || activeTab === 'cards') && (
             <div>
-              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {/* TOTAL STATS KPI CARDS AT TOP */}
+              <div className="cards-row-kpi-5" style={{ marginBottom: 22 }}>
+                <div className="cs-kpi-card" style={{ borderLeftColor: '#2563eb' }}>
+                  <h2>{statsData?.kpi?.totalEnquiries ?? statsData.totalEnquiries ?? (loans.length + cards.length)}</h2>
+                  <p>Total Applications</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => { setActiveTab('loans'); setAppPage(1); }} style={{ borderLeftColor: '#7c3aed', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.totalLoans ?? statsData.totalLoans ?? loans.length}</h2>
+                  <p>Total Loan Apps</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => { setActiveTab('cards'); setAppPage(1); }} style={{ borderLeftColor: '#0284c7', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.totalCards ?? statsData.totalCards ?? cards.length}</h2>
+                  <p>Total Credit Cards</p>
+                </div>
+                <div className="cs-kpi-card" style={{ borderLeftColor: '#10b981' }}>
+                  <h2>{statsData?.kpi?.approved ?? statsData.approved ?? 0}</h2>
+                  <p>Approved Files</p>
+                </div>
+                <div className="cs-kpi-card" onClick={() => setActiveTab('documents')} style={{ borderLeftColor: '#f59e0b', cursor: 'pointer' }}>
+                  <h2>{statsData?.kpi?.docsPending ?? statsData.docsPending ?? 0}</h2>
+                  <p>Pending KYC Docs</p>
+                </div>
+              </div>
+
+              <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                 <div>
-                  <h1 style={{ margin: 0 }}>💳 Loan & Credit Applications</h1>
-                  <p style={{ margin: 0, color: '#64748b' }}>Manage and track all financial applications</p>
+                  <h1 style={{ margin: 0 }}>
+                    {activeTab === 'loans' ? '🏦 Loan Applications' : '💳 Credit Card Applications'}
+                  </h1>
+                  <p style={{ margin: 0, color: '#64748b' }}>
+                    {activeTab === 'loans'
+                      ? 'Review, process, and approve customer loan requests — click any applicant to view details'
+                      : 'Review, process, and approve credit card applications — click any applicant to view details'}
+                  </p>
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={() => setShowLoanModal(true)} style={{ background: '#7c3aed', color: '#fff', padding: '10px 15px', borderRadius: 6, border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>+ New Loan</button>
-                  <button onClick={() => setShowCardModal(true)} style={{ background: '#2563eb', color: '#fff', padding: '10px 15px', borderRadius: 6, border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>+ New Credit Card</button>
+                  {activeTab === 'loans' ? (
+                    <button onClick={() => setShowLoanModal(true)} style={{ background: '#7c3aed', color: '#fff', padding: '10px 16px', borderRadius: 8, border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>+ New Loan</button>
+                  ) : (
+                    <button onClick={() => setShowCardModal(true)} style={{ background: '#2563eb', color: '#fff', padding: '10px 16px', borderRadius: 8, border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>+ New Credit Card</button>
+                  )}
                 </div>
               </div>
 
@@ -812,7 +877,7 @@ export default function FinancialDashboard() {
                   </svg>
                   <input
                     type="text"
-                    placeholder="Search by applicant, phone, or city..."
+                    placeholder={activeTab === 'loans' ? 'Search loans by applicant, phone, city, or loan type...' : 'Search credit cards by applicant, mobile, email, city, or card...'}
                     value={searchQuery}
                     onChange={(e) => { setSearchQuery(e.target.value); setAppPage(1); }}
                     style={{
@@ -868,69 +933,168 @@ export default function FinancialDashboard() {
                   <option value="Rejected">Rejected</option>
                   <option value="Closed">Closed</option>
                 </select>
-                <select
-                  value={typeFilter}
-                  onChange={(e) => { setTypeFilter(e.target.value); setAppPage(1); }}
-                  style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, background: '#fff' }}
-                >
-                  <option value="ALL">All Types (Loans & Cards)</option>
-                  <option value="LOANS">Loans Only</option>
-                  <option value="CARDS">Credit Cards Only</option>
-                </select>
               </div>
 
               <div className="panel-card" style={{ marginTop: 15 }}>
                 <div className="panel-title">
-                  <span>Applications List ({allApplications.length})</span>
+                  <span>
+                    {activeTab === 'loans'
+                      ? `Loan Applications (${filteredLoans.length})`
+                      : `Credit Card Applications (${filteredCards.length})`}
+                  </span>
                 </div>
-                {allApplications.length === 0 ? (
-                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>No applications found matching criteria.</p>
-                ) : (
+
+                {activeList.length === 0 ? (
+                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: 35 }}>
+                    {activeTab === 'loans' ? 'No loan applications found matching criteria.' : 'No credit card applications found matching criteria.'}
+                  </p>
+                ) : activeTab === 'loans' ? (
+                  /* LOANS TABLE */
                   <table className="dash-table">
                     <thead>
-                      <tr><th>Applicant</th><th>Type</th><th>Amount / Income</th><th>City</th><th>Status</th><th>Action</th></tr>
+                      <tr>
+                        <th>ID</th>
+                        <th>Applicant Name</th>
+                        <th>Loan Type</th>
+                        <th>Loan Amount</th>
+                        <th>City</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
                     </thead>
                     <tbody>
                       {currentApps.map(item => (
-                        <tr key={`${item.appType}-${item.id}`}>
+                        <tr key={`Loan-${item.id}`}>
+                          <td>
+                            <span style={{ background: '#eff6ff', color: '#1e40af', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 700 }}>
+                              LOAN-{item.id}
+                            </span>
+                          </td>
                           <td>
                             <strong
                               onClick={() => setViewApp(item)}
                               style={{ fontSize: 14, color: '#1e40af', cursor: 'pointer', textDecoration: 'underline' }}
-                              title="Click to view application details"
+                              title="Click to view loan application details"
                             >
-                              {item.displayTitle}
+                              {item.applicant_name}
                             </strong>
-                            <div style={{ fontSize: 12, color: '#64748b' }}>{item.displaySub}</div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              📞 {item.contact_details}
+                              {item.customer_email ? ` · ${item.customer_email}` : ''}
+                            </div>
                           </td>
                           <td>
-                            <span style={{ background: item.typeBadgeBg, color: item.typeBadgeColor, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
-                              {item.typeIcon} {item.displayType}
+                            <span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 8px', borderRadius: 6, fontSize: 11.5, fontWeight: 600 }}>
+                              🏦 {item.loan_type}
                             </span>
                           </td>
-                          <td>{item.displayAmount}</td>
+                          <td style={{ fontWeight: 700, color: '#0f172a' }}>{item.displayAmount}</td>
                           <td>{item.city || '—'}</td>
+                          <td style={{ fontSize: 12.5, color: '#64748b' }}>
+                            {item.application_date || item.created_at
+                              ? new Date(item.application_date || item.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                              : '—'}
+                          </td>
                           <td>{getStatusBadge(item.status)}</td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                               <button
                                 onClick={() => setViewApp(item)}
-                                title="View details"
+                                title="View application details"
                                 style={{ padding: '5px 9px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
                               >
                                 View
                               </button>
                               <select
                                 value={item.status}
-                                onChange={(e) => handleStatusChange(item.appType === 'Loan' ? 'loan' : 'card', item.id, e.target.value)}
+                                onChange={(e) => handleStatusChange('loan', item.id, e.target.value)}
                                 style={{ padding: '5px', borderRadius: '5px', fontSize: '12px' }}
                               >
                                 {['New', 'Documents Pending', 'Submitted', 'Under Process', 'Approved', 'Rejected', 'Closed'].map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <button
-                                onClick={() => openUploadForApp(item.appType === 'Loan' ? 'loan' : 'card', item.id)}
+                                onClick={() => openUploadForApp('loan', item.id)}
                                 title="Upload KYC Document"
-                                style={{ padding: '5px 9px', background: item.appType === 'Loan' ? '#7c3aed' : '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600 }}
+                                style={{ padding: '5px 9px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                📤 Doc
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* CREDIT CARDS TABLE */
+                  <table className="dash-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Applicant Name</th>
+                        <th>Card Product</th>
+                        <th>Monthly Income</th>
+                        <th>City</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {currentApps.map(item => (
+                        <tr key={`CreditCard-${item.id}`}>
+                          <td>
+                            <span style={{ background: '#faf5ff', color: '#7e22ce', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 700 }}>
+                              CARD-{item.id}
+                            </span>
+                          </td>
+                          <td>
+                            <strong
+                              onClick={() => setViewApp(item)}
+                              style={{ fontSize: 14, color: '#1e40af', cursor: 'pointer', textDecoration: 'underline' }}
+                              title="Click to view credit card application details"
+                            >
+                              {item.applicant_name}
+                            </strong>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              📞 {item.mobile_number}
+                              {(item.email || item.customer_email) ? ` · ${item.email || item.customer_email}` : ''}
+                            </div>
+                          </td>
+                          <td>
+                            <span style={{ background: '#f3e8ff', color: '#7e22ce', padding: '3px 8px', borderRadius: 6, fontSize: 11.5, fontWeight: 600 }}>
+                              💳 {item.required_product}
+                            </span>
+                          </td>
+                          <td style={{ fontWeight: 700, color: '#0f172a' }}>{item.displayAmount}</td>
+                          <td>{item.city || '—'}</td>
+                          <td style={{ fontSize: 12.5, color: '#64748b' }}>
+                            {item.application_date || item.created_at
+                              ? new Date(item.application_date || item.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                              : '—'}
+                          </td>
+                          <td>{getStatusBadge(item.status)}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <button
+                                onClick={() => setViewApp(item)}
+                                title="View application details"
+                                style={{ padding: '5px 9px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                View
+                              </button>
+                              <select
+                                value={item.status}
+                                onChange={(e) => handleStatusChange('card', item.id, e.target.value)}
+                                style={{ padding: '5px', borderRadius: '5px', fontSize: '12px' }}
+                              >
+                                {['New', 'Documents Pending', 'Submitted', 'Under Process', 'Approved', 'Rejected', 'Closed'].map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                              <button
+                                onClick={() => openUploadForApp('card', item.id)}
+                                title="Upload KYC Document"
+                                style={{ padding: '5px 9px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 600 }}
                               >
                                 📤 Doc
                               </button>
@@ -943,10 +1107,10 @@ export default function FinancialDashboard() {
                 )}
 
                 {/* PAGINATION CONTROLS */}
-                {allApplications.length > 0 && (
+                {activeList.length > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 14, borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: 10 }}>
                     <span style={{ fontSize: '13px', color: '#64748b' }}>
-                      Showing <strong>{indexOfFirstApp + 1}</strong> to <strong>{Math.min(indexOfLastApp, allApplications.length)}</strong> of <strong>{allApplications.length}</strong> applications
+                      Showing <strong>{indexOfFirstApp + 1}</strong> to <strong>{Math.min(indexOfLastApp, activeList.length)}</strong> of <strong>{activeList.length}</strong> {activeTab === 'loans' ? 'loan' : 'credit card'} applications
                     </span>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <button
@@ -981,57 +1145,165 @@ export default function FinancialDashboard() {
             </div>
           )}
 
-          {/* ENQUIRIES VIEW (Shows only New Applications) */}
-          {activeTab === 'enquiries' && (
-            <div>
-              <div className="greeting-header">
-                <h1 style={{ margin: 0 }}>📄 Customer Enquiries</h1>
-                <p style={{ margin: 0, color: '#64748b' }}>New incoming customer requests requiring action</p>
+          {/* CUSTOMER ENQUIRIES VIEW (Customer-wise Complete Profile & Application History) */}
+          {activeTab === 'enquiries' && (() => {
+            // Group all loans & credit cards by unique customer (email or phone)
+            const customerMap = new Map();
+            const upsertCustomer = (record, type) => {
+              const email = (record.customer_email || record.email || '').trim().toLowerCase();
+              const phone = (record.contact_details || record.mobile_number || '').trim();
+              const key = email || phone || `name-${(record.applicant_name || '').trim().toLowerCase()}`;
+
+              if (!customerMap.has(key)) {
+                customerMap.set(key, {
+                  key,
+                  applicant_name: record.applicant_name || 'Customer',
+                  customer_email: record.customer_email || record.email || '',
+                  contact_details: record.contact_details || record.mobile_number || '',
+                  city: record.city || '',
+                  loansCount: 0,
+                  cardsCount: 0,
+                  approvedCount: 0,
+                  latestDate: record.application_date || record.created_at || null,
+                  latestProduct: type === 'Loan' ? record.loan_type : record.required_product,
+                  latestStatus: record.status || 'New'
+                });
+              }
+
+              const entry = customerMap.get(key);
+              if (type === 'Loan') entry.loansCount += 1;
+              else entry.cardsCount += 1;
+              if (record.status === 'Approved') entry.approvedCount += 1;
+              if (!entry.customer_email && (record.customer_email || record.email)) {
+                entry.customer_email = record.customer_email || record.email;
+              }
+              if (!entry.contact_details && (record.contact_details || record.mobile_number)) {
+                entry.contact_details = record.contact_details || record.mobile_number;
+              }
+              if (!entry.city && record.city) entry.city = record.city;
+
+              const recTime = new Date(record.application_date || record.created_at || 0).getTime();
+              const curTime = new Date(entry.latestDate || 0).getTime();
+              if (recTime >= curTime) {
+                entry.latestDate = record.application_date || record.created_at;
+                entry.latestProduct = type === 'Loan' ? record.loan_type : record.required_product;
+                entry.latestStatus = record.status || 'New';
+              }
+            };
+
+            loans.forEach(l => upsertCustomer(l, 'Loan'));
+            cards.forEach(c => upsertCustomer(c, 'CreditCard'));
+
+            const allCustomers = Array.from(customerMap.values())
+              .sort((a, b) => new Date(b.latestDate || 0) - new Date(a.latestDate || 0))
+              .filter(c => {
+                if (!enquirySearch.trim()) return true;
+                const q = enquirySearch.toLowerCase();
+                return (
+                  (c.applicant_name || '').toLowerCase().includes(q) ||
+                  (c.customer_email || '').toLowerCase().includes(q) ||
+                  (c.contact_details || '').toLowerCase().includes(q) ||
+                  (c.city || '').toLowerCase().includes(q)
+                );
+              });
+
+            return (
+              <div>
+                <div className="greeting-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <div>
+                    <h1 style={{ margin: 0 }}>📄 Customer Enquiries & Complete History</h1>
+                    <p style={{ margin: 0, color: '#64748b' }}>Click any customer name to view their complete Loan & Credit Card application history</p>
+                  </div>
+                  <div style={{ position: 'relative', minWidth: 280 }}>
+                    <input
+                      type="text"
+                      placeholder="Search customer by name, email, phone, city..."
+                      value={enquirySearch}
+                      onChange={(e) => setEnquirySearch(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 14px',
+                        borderRadius: 8,
+                        border: '1px solid #cbd5e1',
+                        fontSize: 13.5,
+                        background: '#ffffff',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="panel-card" style={{ marginTop: 20 }}>
+                  <div className="panel-title">
+                    <span>All Customers ({allCustomers.length})</span>
+                  </div>
+                  {allCustomers.length === 0 ? (
+                    <p style={{ color: '#94a3b8', textAlign: 'center', padding: 30 }}>No customer records found.</p>
+                  ) : (
+                    <table className="dash-table">
+                      <thead>
+                        <tr>
+                          <th>Customer Name</th>
+                          <th>Contact & Email</th>
+                          <th>City</th>
+                          <th>Total Applications</th>
+                          <th>Latest Request</th>
+                          <th>Latest Status</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allCustomers.map(cust => (
+                          <tr key={cust.key}>
+                            <td>
+                              <strong
+                                onClick={() => handleOpenCustomerHistory(cust)}
+                                style={{ cursor: 'pointer', color: '#7c3aed', textDecoration: 'underline', fontSize: 14 }}
+                                title="Click to view complete Loan & Credit Card history"
+                              >
+                                {cust.applicant_name}
+                              </strong>
+                            </td>
+                            <td>
+                              <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>📞 {cust.contact_details || '—'}</div>
+                              {cust.customer_email && <div style={{ fontSize: 12, color: '#64748b' }}>📧 {cust.customer_email}</div>}
+                            </td>
+                            <td>{cust.city || '—'}</td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                <span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 8px', borderRadius: 6, fontSize: 11.5, fontWeight: 700 }}>
+                                  🏦 {cust.loansCount} {cust.loansCount === 1 ? 'Loan' : 'Loans'}
+                                </span>
+                                <span style={{ background: '#f3e8ff', color: '#7e22ce', padding: '3px 8px', borderRadius: 6, fontSize: 11.5, fontWeight: 700 }}>
+                                  💳 {cust.cardsCount} {cust.cardsCount === 1 ? 'Card' : 'Cards'}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ fontSize: 13, color: '#334155', fontWeight: 600 }}>
+                              {cust.latestProduct || '—'}
+                              <div style={{ fontSize: 11.5, color: '#94a3b8', fontWeight: 400 }}>
+                                {cust.latestDate ? new Date(cust.latestDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                              </div>
+                            </td>
+                            <td>{getStatusBadge(cust.latestStatus)}</td>
+                            <td>
+                              <button
+                                onClick={() => handleOpenCustomerHistory(cust)}
+                                style={{ padding: '6px 12px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                📋 Full History
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
               </div>
-              <div className="panel-card" style={{ marginTop: 20 }}>
-                <table className="dash-table">
-                  <thead><tr><th>Customer Name</th><th>Product Inquired</th><th>Contact</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {loans.filter(l => l.status === 'New').map(l => (
-                      <tr key={l.id}>
-                        <td>
-                          <strong
-                            onClick={() => setViewApp({ ...l, appType: 'Loan', displayTitle: l.applicant_name, displaySub: l.contact_details, displayType: l.loan_type, displayAmount: `₹${parseFloat(l.loan_amount_requested || 0).toLocaleString('en-IN')}`, typeBadgeBg: '#dbeafe', typeBadgeColor: '#1e40af', typeIcon: '🏦' })}
-                            style={{ cursor: 'pointer', color: '#1e40af', textDecoration: 'underline' }}
-                            title="Click to view details"
-                          >
-                            {l.applicant_name}
-                          </strong>
-                        </td>
-                        <td>🏦 {l.loan_type}</td>
-                        <td>{l.contact_details}</td>
-                        <td>{getStatusBadge(l.status)}</td>
-                      </tr>
-                    ))}
-                    {cards.filter(c => c.status === 'New').map(c => (
-                      <tr key={c.id}>
-                        <td>
-                          <strong
-                            onClick={() => setViewApp({ ...c, appType: 'CreditCard', displayTitle: c.applicant_name, displaySub: c.mobile_number, displayType: c.required_product, displayAmount: `₹${parseFloat(c.monthly_income || 0).toLocaleString('en-IN')} (Income)`, typeBadgeBg: '#f3e8ff', typeBadgeColor: '#7e22ce', typeIcon: '💳' })}
-                            style={{ cursor: 'pointer', color: '#1e40af', textDecoration: 'underline' }}
-                            title="Click to view details"
-                          >
-                            {c.applicant_name}
-                          </strong>
-                        </td>
-                        <td>💳 {c.required_product}</td>
-                        <td>{c.mobile_number}</td>
-                        <td>{getStatusBadge(c.status)}</td>
-                      </tr>
-                    ))}
-                    {loans.filter(l => l.status === 'New').length === 0 && cards.filter(c => c.status === 'New').length === 0 && (
-                      <tr><td colSpan="4" style={{textAlign: 'center', padding: 20}}>No new enquiries found.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* DOCUMENTS VIEW (Shows Pending Documents + Uploaded Repository) */}
           {activeTab === 'documents' && (
@@ -1562,6 +1834,121 @@ export default function FinancialDashboard() {
                 style={{ padding: '9px 20px', background: '#16a34a', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '13px' }}
               >
                 ✓ Confirm Completion
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= CUSTOMER APPLICATION HISTORY MODAL ================= */}
+      {viewCustomerHistory && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050, backdropFilter: 'blur(4px)', padding: '20px' }}>
+          <div style={{ background: '#fff', padding: '28px', borderRadius: '16px', width: '100%', maxWidth: '760px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.28)', maxHeight: '88vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '18px' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#0f172a', fontSize: '20px', fontWeight: 800 }}>
+                  👤 {viewCustomerHistory.name} — Application History
+                </h2>
+                <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '13px' }}>
+                  {viewCustomerHistory.email ? `📧 ${viewCustomerHistory.email}` : ''}
+                  {viewCustomerHistory.email && viewCustomerHistory.contact ? '  ·  ' : ''}
+                  {viewCustomerHistory.contact ? `📞 ${viewCustomerHistory.contact}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setViewCustomerHistory(null)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* QUICK SUMMARY STRIP */}
+            {!loadingHistory && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '18px' }}>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>TOTAL REQUESTS</span>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>{customerHistoryList.length}</div>
+                </div>
+                <div style={{ background: '#eff6ff', padding: '12px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                  <span style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: 700 }}>LOANS</span>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#1e40af', marginTop: '2px' }}>{customerHistoryList.filter(h => h.application_type === 'Loan').length}</div>
+                </div>
+                <div style={{ background: '#faf5ff', padding: '12px', borderRadius: '8px', border: '1px solid #e9d5ff' }}>
+                  <span style={{ fontSize: '11px', color: '#7e22ce', fontWeight: 700 }}>CREDIT CARDS</span>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#6b21a8', marginTop: '2px' }}>{customerHistoryList.filter(h => h.application_type === 'Credit Card').length}</div>
+                </div>
+                <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '11px', color: '#15803d', fontWeight: 700 }}>APPROVED</span>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#166534', marginTop: '2px' }}>{customerHistoryList.filter(h => h.status === 'Approved').length}</div>
+                </div>
+              </div>
+            )}
+
+            {loadingHistory ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#64748b', fontSize: '14px' }}>
+                Loading complete customer application history...
+              </div>
+            ) : customerHistoryList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', fontSize: '14px', background: '#f8fafc', borderRadius: '10px' }}>
+                No application history records found for this customer.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="dash-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>App ID</th>
+                      <th>Application Type</th>
+                      <th>Product Type</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {customerHistoryList.map((h) => (
+                      <tr key={h.applicationId}>
+                        <td>
+                          <span style={{ fontWeight: 700, fontSize: 12.5, color: '#334155' }}>
+                            {h.applicationId}
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{
+                            padding: '3px 9px',
+                            borderRadius: 6,
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            background: h.application_type === 'Loan' ? '#dbeafe' : '#f3e8ff',
+                            color: h.application_type === 'Loan' ? '#1e40af' : '#7e22ce'
+                          }}>
+                            {h.application_type === 'Loan' ? '🏦 Loan' : '💳 Credit Card'}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600, color: '#0f172a' }}>{h.product_type}</td>
+                        <td style={{ fontWeight: 700, color: '#059669' }}>
+                          {h.amount ? `₹${parseFloat(h.amount).toLocaleString('en-IN')}` : '—'}
+                        </td>
+                        <td>{getStatusBadge(h.status)}</td>
+                        <td style={{ fontSize: 12.5, color: '#64748b' }}>
+                          {h.application_date || h.created_at
+                            ? new Date(h.application_date || h.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
+              <button
+                onClick={() => setViewCustomerHistory(null)}
+                style={{ padding: '9px 20px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#334155', fontWeight: 700, cursor: 'pointer', fontSize: '13px' }}
+              >
+                Close History
               </button>
             </div>
           </div>

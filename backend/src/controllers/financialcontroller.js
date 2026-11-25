@@ -54,21 +54,26 @@ exports.createLoanApp = async (req, res) => {
 exports.getLoanApps = async (req, res) => {
   try {
     const { status, search } = req.query;
-    let query = 'SELECT * FROM loan_applications WHERE 1=1';
+    let query = `
+      SELECT la.*, c.email AS customer_email
+      FROM loan_applications la
+      LEFT JOIN customers c ON la.customer_id = c.id
+      WHERE 1=1
+    `;
     const params = [];
 
     if (status && status !== 'ALL') {
-      query += ' AND status = ?';
+      query += ' AND la.status = ?';
       params.push(status);
     }
 
     if (search) {
-      query += ' AND (applicant_name LIKE ? OR contact_details LIKE ? OR city LIKE ?)';
+      query += ' AND (la.applicant_name LIKE ? OR la.contact_details LIKE ? OR la.city LIKE ?)';
       const term = `%${search}%`;
       params.push(term, term, term);
     }
 
-    query += ' ORDER BY created_at DESC';
+    query += ' ORDER BY la.created_at DESC, la.id DESC';
 
     const [apps] = await pool.query(query, params);
     res.json(apps);
@@ -160,21 +165,26 @@ exports.createCreditCardApp = async (req, res) => {
 exports.getCreditCardApps = async (req, res) => {
   try {
     const { status, search } = req.query;
-    let query = 'SELECT * FROM credit_card_applications WHERE 1=1';
+    let query = `
+      SELECT ca.*, COALESCE(NULLIF(ca.email, ''), c.email) AS customer_email
+      FROM credit_card_applications ca
+      LEFT JOIN customers c ON ca.customer_id = c.id
+      WHERE 1=1
+    `;
     const params = [];
 
     if (status && status !== 'ALL') {
-      query += ' AND status = ?';
+      query += ' AND ca.status = ?';
       params.push(status);
     }
 
     if (search) {
-      query += ' AND (applicant_name LIKE ? OR mobile_number LIKE ? OR city LIKE ?)';
+      query += ' AND (ca.applicant_name LIKE ? OR ca.mobile_number LIKE ? OR ca.city LIKE ?)';
       const term = `%${search}%`;
       params.push(term, term, term);
     }
 
-    query += ' ORDER BY created_at DESC';
+    query += ' ORDER BY ca.created_at DESC, ca.id DESC';
 
     const [apps] = await pool.query(query, params);
     res.json(apps);
@@ -349,5 +359,112 @@ exports.getFinancialDocuments = async (req, res) => {
   } catch (err) {
     console.error('getFinancialDocuments error:', err);
     res.status(500).json({ message: 'Server error fetching financial documents' });
+  }
+};
+
+// ================= 5. CUSTOMER APPLICATION HISTORY =================
+exports.getCustomerHistory = async (req, res) => {
+  try {
+    const identifier = decodeURIComponent(req.params.email || '').trim();
+    if (!identifier) {
+      return res.status(400).json({ message: 'Customer email or identifier is required' });
+    }
+
+    const normalized = identifier.toLowerCase();
+
+    // Find matching customer record (by email or phone) to link customer_id and phone
+    const [custRows] = await pool.query(
+      'SELECT id, email, phone FROM customers WHERE LOWER(email) = ? OR phone = ? LIMIT 1',
+      [normalized, identifier]
+    );
+    let customerId = custRows[0]?.id || null;
+    let customerPhone = custRows[0]?.phone || (!identifier.includes('@') ? identifier : null);
+    let customerEmail = custRows[0]?.email || (identifier.includes('@') ? normalized : null);
+
+    // Fallback: check credit_card_applications if not found in customers table
+    if (!customerId || !customerPhone) {
+      const [cardMatch] = await pool.query(
+        'SELECT customer_id, mobile_number, email FROM credit_card_applications WHERE LOWER(email) = ? OR mobile_number = ? LIMIT 1',
+        [normalized, identifier]
+      );
+      if (cardMatch.length > 0) {
+        customerId = customerId || cardMatch[0].customer_id;
+        customerPhone = customerPhone || cardMatch[0].mobile_number;
+        customerEmail = customerEmail || cardMatch[0].email;
+      }
+    }
+
+    // Query Loan Applications
+    const loanConditions = ['contact_details = ?'];
+    const loanParams = [identifier];
+    if (customerId) {
+      loanConditions.push('customer_id = ?');
+      loanParams.push(customerId);
+    }
+    if (customerPhone && customerPhone !== identifier) {
+      loanConditions.push('contact_details = ?');
+      loanParams.push(customerPhone);
+    }
+
+    const [loanRows] = await pool.query(
+      `SELECT 
+         id,
+         CONCAT('LOAN-', id) AS applicationId,
+         'Loan' AS application_type,
+         COALESCE(NULLIF(loan_type, ''), 'Personal Loan') AS product_type,
+         loan_amount_requested AS amount,
+         applicant_name,
+         contact_details AS contact,
+         city,
+         status,
+         application_date,
+         created_at
+       FROM loan_applications
+       WHERE ${loanConditions.join(' OR ')}`,
+      loanParams
+    );
+
+    // Query Credit Card Applications
+    const cardConditions = ['LOWER(email) = ?', 'mobile_number = ?'];
+    const cardParams = [customerEmail || normalized, identifier];
+    if (customerId) {
+      cardConditions.push('customer_id = ?');
+      cardParams.push(customerId);
+    }
+    if (customerPhone && customerPhone !== identifier) {
+      cardConditions.push('mobile_number = ?');
+      cardParams.push(customerPhone);
+    }
+
+    const [cardRows] = await pool.query(
+      `SELECT 
+         id,
+         CONCAT('CARD-', id) AS applicationId,
+         'Credit Card' AS application_type,
+         COALESCE(NULLIF(required_product, ''), 'Platinum Card') AS product_type,
+         monthly_income AS amount,
+         applicant_name,
+         mobile_number AS contact,
+         email,
+         city,
+         status,
+         application_date,
+         created_at
+       FROM credit_card_applications
+       WHERE ${cardConditions.join(' OR ')}`,
+      cardParams
+    );
+
+    const merged = [...loanRows, ...cardRows].sort((a, b) => {
+      const dateA = new Date(a.application_date || a.created_at || 0).getTime();
+      const dateB = new Date(b.application_date || b.created_at || 0).getTime();
+      if (dateB !== dateA) return dateB - dateA;
+      return (b.id || 0) - (a.id || 0);
+    });
+
+    res.json(merged);
+  } catch (err) {
+    console.error('getCustomerHistory error:', err);
+    res.status(500).json({ message: 'Server error fetching customer application history' });
   }
 };

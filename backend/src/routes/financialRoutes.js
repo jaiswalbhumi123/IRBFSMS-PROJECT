@@ -11,7 +11,8 @@ const {
   updateCreditCardStatus,
   getFinancialStats, 
   uploadDocument,
-  getFinancialDocuments
+  getFinancialDocuments,
+  getCustomerHistory
 } = require('../controllers/financialcontroller');
 const { protect } = require('../middleware/authmiddleware');
 const upload = require('../middleware/uploadmiddleware');
@@ -35,5 +36,8 @@ router.put('/credit-cards/:id/status', protect, updateCreditCardStatus);
 // 4. KYC Documents
 router.get('/documents', protect, getFinancialDocuments);
 router.post('/documents', protect, upload.single('document'), uploadDocument);
+
+// 5. Customer History
+router.get('/customer-history/:email', protect, getCustomerHistory);
 
 module.exports = router;
